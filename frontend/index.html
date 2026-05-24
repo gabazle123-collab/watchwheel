@@ -45,7 +45,7 @@
       </button>
     </nav>
 
-    <!-- ONBOARDING (shows if no username) -->
+    <!-- ONBOARDING -->
     <section id="onboarding" class="screen" hidden>
       <div class="eyebrow"><span class="rule"></span>An introduction</div>
       <h1 class="headline">A film from your watchlist, chosen for <em>tonight</em>.</h1>
@@ -63,26 +63,58 @@
       <h1 class="headline">What kind of evening is it, <em>tonight</em>?</h1>
       <p class="dek">Tell us the mood. We'll find a film worth dimming the lights for.</p>
 
-      <!-- MOOD CHIPS -->
-      <div class="chips" id="moodChips">
-        <button class="chip" data-mood="slow-burn">Slow burn</button>
-        <button class="chip" data-mood="sun-drenched">Sun-drenched</button>
-        <button class="chip" data-mood="noir">Noir</button>
-        <button class="chip" data-mood="melancholy">Melancholy</button>
-        <button class="chip" data-mood="first-date">First date</button>
-        <button class="chip" data-mood="wintry">Wintry</button>
+      <!-- MOOD: FREE TEXT -->
+      <div class="mood-section">
+        <div class="eyebrow eyebrow-sm"><span class="rule"></span>Tonight feels like…</div>
+        <textarea
+          id="moodText"
+          class="mood-input"
+          rows="1"
+          placeholder="Describe the evening… a rainy sunday, a quiet farewell, something my grandmother would love"
+          autocomplete="off"
+          spellcheck="false"
+        ></textarea>
+
+        <div id="chipsBlock" class="chips-block">
+          <div class="eyebrow eyebrow-sm"><span class="rule"></span>Or borrow a mood</div>
+          <div class="chips" id="moodChips">
+            <button class="chip" data-mood="slow burn">Slow burn</button>
+            <button class="chip" data-mood="sun-drenched">Sun-drenched</button>
+            <button class="chip" data-mood="noir">Noir</button>
+            <button class="chip" data-mood="melancholy">Melancholy</button>
+            <button class="chip" data-mood="first date">First date</button>
+            <button class="chip" data-mood="wintry">Wintry</button>
+          </div>
+        </div>
       </div>
 
       <!-- DECADE / RUNTIME -->
       <div class="glass-row">
-        <button class="glass-card" id="decadeCard">
-          <span class="glass-label">Decade</span>
-          <span class="glass-value" id="decadeValue">Any era</span>
-        </button>
-        <button class="glass-card" id="runtimeCard">
-          <span class="glass-label">Runtime</span>
-          <span class="glass-value" id="runtimeValue">Any length</span>
-        </button>
+        <div class="disclosure" data-disclosure="decade">
+          <button class="glass-card" data-disclosure-trigger>
+            <span class="glass-label">Decade</span>
+            <span class="glass-row-inner">
+              <span class="glass-value" id="decadeValue">Any era</span>
+              <span class="glass-affordance">›</span>
+            </span>
+          </button>
+          <div class="panel" data-disclosure-panel hidden>
+            <!-- options injected by JS -->
+          </div>
+        </div>
+
+        <div class="disclosure" data-disclosure="runtime">
+          <button class="glass-card" data-disclosure-trigger>
+            <span class="glass-label">Runtime</span>
+            <span class="glass-row-inner">
+              <span class="glass-value" id="runtimeValue">Any length</span>
+              <span class="glass-affordance">›</span>
+            </span>
+          </button>
+          <div class="panel" data-disclosure-panel hidden>
+            <!-- options injected by JS -->
+          </div>
+        </div>
       </div>
 
       <p id="homeStatus" class="status"></p>
@@ -94,7 +126,7 @@
       </div>
     </section>
 
-    <!-- TONIGHT'S SCREENING (result) -->
+    <!-- TONIGHT'S SCREENING -->
     <section id="screening" class="screen" hidden>
       <nav class="result-topbar">
         <button class="icon-btn" id="backBtn" aria-label="Back">
@@ -106,7 +138,7 @@
         <button class="icon-btn" id="favBtn" aria-label="Favourite">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
             <path d="M8 13.5 C8 13.5 2.5 10 2.5 6 C2.5 4 4 2.5 6 2.5 C7 2.5 8 3.2 8 4.2 C8 3.2 9 2.5 10 2.5 C12 2.5 13.5 4 13.5 6 C13.5 10 8 13.5 8 13.5 Z"/>
-          </svg>
+        </svg>
         </button>
       </nav>
 
