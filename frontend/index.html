@@ -52,7 +52,7 @@
       <p class="dek">Enter your Letterboxd username. We'll remember it.</p>
       <div class="input-row">
         <input type="text" id="usernameInput" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button class="btn-primary" id="saveUsernameBtn">Begin</button>
+        <button class="btn-primary" id="pickBtn">Find tonight's film</button>
       </div>
       <p id="onboardStatus" class="status"></p>
     </section>
@@ -66,7 +66,14 @@
       <!-- MOOD: FREE TEXT -->
       <div class="mood-section">
         <div class="eyebrow eyebrow-sm"><span class="rule"></span>Tonight feels like…</div>
-        <textarea
+        <<textarea
+  id="moodText"
+  class="mood-input"
+  rows="3"
+  placeholder="Describe the evening… a rainy sunday, a quiet farewell, something my grandmother would love"
+  autocomplete="off"
+  spellcheck="false"
+></textarea>textarea
           id="moodText"
           class="mood-input"
           rows="1"
