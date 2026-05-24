@@ -15,15 +15,17 @@ async function scrapeWatchlist(username) {
   });
   const $ = cheerio.load(response.data);
   const movies = [];
-  $('.poster-container').each((_, el) => {
-    const film = $(el).find('.film-poster');
-    movies.push({
-      title: film.attr('data-film-name'),
-      year: film.attr('data-film-release-year'),
-      url: 'https://letterboxd.com' + film.attr('data-target-link')
-    });
+  $('[data-item-name]').each((_, el) => {
+    const fullName = $(el).attr('data-item-name');
+    const link = $(el).attr('data-item-link');
+    const yearMatch = fullName.match(/\((\d{4})\)$/);
+    const year = yearMatch ? yearMatch[1] : '';
+    const title = fullName.replace(/\s*\(\d{4}\)$/, '').trim();
+    if (title) {
+      movies.push({ title, year, url: 'https://letterboxd.com' + link });
+    }
   });
-  return movies.filter(movie => movie.title);
+  return movies;
 }
 
 app.get('/', (req, res) => res.send('WatchWheel backend running'));
