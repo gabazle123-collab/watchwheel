@@ -4,6 +4,7 @@ const state = {
   username: localStorage.getItem('ww_username') || null,
   watchlist: [],
   selectedMoods: new Set(),
+  moodText: '',
   decade: null,
   runtime: null,
   history: JSON.parse(localStorage.getItem('ww_history') || '[]'),
@@ -17,14 +18,13 @@ function show(screenId) {
   ['onboarding', 'home', 'screening', 'library'].forEach(id => {
     $(id).hidden = (id !== screenId);
   });
+  closeAllDisclosures();
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
-function setBgWarm(on) {
-  document.body.classList.toggle('warm-bg', on);
-}
+function setBgWarm(on) { document.body.classList.toggle('warm-bg', on); }
 
-// ── PROGRAMME EYEBROW ──
+// PROGRAMME EYEBROW
 function setProgrammeEyebrow() {
   const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
   const day = days[new Date().getDay()];
@@ -33,28 +33,107 @@ function setProgrammeEyebrow() {
   $('programmeDay').textContent = `A ${day} programme`;
 }
 
-// ── DECADE / RUNTIME PICKERS ──
-const DECADES = ['Any era', '2020s', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s', 'Pre-1960'];
-const RUNTIMES = ['Any length', 'Under 90 min', '90–120 min', 'Over 2 hours'];
+// DISCLOSURE OPTIONS
+const DECADE_OPTIONS = [
+  { value: null,       label: 'Any era',                  sub: '—'      },
+  { value: '1930s',    label: 'The thirties',             sub: '1930s'  },
+  { value: '1940s',    label: 'The forties',              sub: '1940s'  },
+  { value: '1950s',    label: 'The fifties',              sub: '1950s'  },
+  { value: '1960s',    label: 'The sixties',              sub: '1960s'  },
+  { value: '1970s',    label: 'The seventies',            sub: '1970s'  },
+  { value: '1980s',    label: 'The eighties',             sub: '1980s'  },
+  { value: '1990s',    label: 'The nineties',             sub: '1990s'  },
+  { value: '2000s',    label: 'The two thousands',        sub: '2000s'  },
+  { value: '2010s',    label: 'The two thousand tens',    sub: '2010s'  },
+  { value: '2020s',    label: 'The two thousand twenties',sub: '2020s'  },
+];
 
-function cycle(arr, current) {
-  const i = arr.indexOf(current);
-  return arr[(i + 1) % arr.length];
+const RUNTIME_OPTIONS = [
+  { value: null,       label: 'Any length',       sub: '—'           },
+  { value: 'short',    label: 'A short evening',  sub: '‹ 90 min'    },
+  { value: 'standard', label: 'Standard feature', sub: '90–120 min'  },
+  { value: 'long',     label: 'Long form',        sub: '120–150 min' },
+  { value: 'epic',     label: 'An epic',          sub: '› 150 min'   },
+];
+
+// DISCLOSURE COMPONENT
+function buildDisclosure(name, options, valueLabelId, displayMap) {
+  const root = document.querySelector(`[data-disclosure="${name}"]`);
+  const panel = root.querySelector('[data-disclosure-panel]');
+  const trigger = root.querySelector('[data-disclosure-trigger]');
+  const affordance = trigger.querySelector('.glass-affordance');
+
+  function render() {
+    panel.innerHTML = options.map(opt => {
+      const isSelected = state[name] === opt.value;
+      return `
+        <button class="panel-option ${isSelected ? 'selected' : ''}" data-value="${opt.value ?? ''}">
+          <span class="opt-value">${opt.label}</span>
+          <span class="opt-sub">${opt.sub}</span>
+        </button>
+      `;
+    }).join('');
+
+    panel.querySelectorAll('.panel-option').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const raw = btn.dataset.value;
+        const val = raw === '' ? null : raw;
+        state[name] = val;
+        const chosen = options.find(o => o.value === val);
+        $(valueLabelId).textContent = chosen.label;
+        close();
+      });
+    });
+  }
+
+  function open() {
+    closeAllDisclosures(root);
+    render();
+    panel.hidden = false;
+    root.classList.add('open');
+    affordance.textContent = '˅';
+  }
+
+  function close() {
+    panel.hidden = true;
+    root.classList.remove('open');
+    affordance.textContent = '›';
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (root.classList.contains('open')) close();
+    else open();
+  });
+
+  return { open, close, root };
 }
 
-$('decadeCard').addEventListener('click', () => {
-  const next = cycle(DECADES, $('decadeValue').textContent);
-  $('decadeValue').textContent = next;
-  state.decade = next === 'Any era' ? null : next;
+const disclosures = [];
+
+function closeAllDisclosures(except) {
+  disclosures.forEach(d => { if (d.root !== except) d.close(); });
+}
+
+document.addEventListener('click', () => closeAllDisclosures());
+
+// MOOD TEXT + CHIPS
+const moodTextEl = $('moodText');
+const chipsBlock = $('chipsBlock');
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+moodTextEl.addEventListener('input', () => {
+  state.moodText = moodTextEl.value;
+  moodTextEl.classList.toggle('has-content', moodTextEl.value.trim().length > 0);
+  chipsBlock.classList.toggle('dim', moodTextEl.value.trim().length > 0);
+  autoGrow(moodTextEl);
 });
 
-$('runtimeCard').addEventListener('click', () => {
-  const next = cycle(RUNTIMES, $('runtimeValue').textContent);
-  $('runtimeValue').textContent = next;
-  state.runtime = next === 'Any length' ? null : next;
-});
-
-// ── MOOD CHIPS ──
 document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {
     const mood = chip.dataset.mood;
@@ -68,7 +147,16 @@ document.querySelectorAll('.chip').forEach(chip => {
   });
 });
 
-// ── ONBOARDING ──
+function composeMoodDescription() {
+  const text = state.moodText.trim();
+  const chips = Array.from(state.selectedMoods);
+  if (text && chips.length) return `${text}. Mood: ${chips.join(', ')}`;
+  if (text) return text;
+  if (chips.length) return `Mood: ${chips.join(', ')}`;
+  return '';
+}
+
+// ONBOARDING
 $('saveUsernameBtn').addEventListener('click', async () => {
   const name = $('usernameInput').value.trim();
   if (!name) return;
@@ -96,31 +184,19 @@ $('saveUsernameBtn').addEventListener('click', async () => {
   }
 });
 
-// ── PICK LOGIC ──
+// PICK LOGIC
 function filterWatchlist() {
   let pool = state.watchlist.slice();
-
   if (state.decade) {
     pool = pool.filter(m => {
       const y = parseInt(m.year);
       if (!y) return false;
-      if (state.decade === 'Pre-1960') return y < 1960;
       const d = parseInt(state.decade);
       return y >= d && y < d + 10;
     });
   }
-
   return pool.length > 0 ? pool : state.watchlist;
 }
-
-const MOODS_META = {
-  'slow-burn': { mood: 'Contemplative', pace: 'Patient' },
-  'sun-drenched': { mood: 'Languid', pace: 'Drifting' },
-  'noir': { mood: 'Shadowed', pace: 'Taut' },
-  'melancholy': { mood: 'Wistful', pace: 'Lingering' },
-  'first-date': { mood: 'Tender', pace: 'Easy' },
-  'wintry': { mood: 'Hushed', pace: 'Still' },
-};
 
 const QUOTES = [
   '"A near-silent meditation on what is left unsaid."',
@@ -131,9 +207,7 @@ const QUOTES = [
   '"The kind of film one returns to in different weather."',
 ];
 
-function pickQuote() {
-  return QUOTES[Math.floor(Math.random() * QUOTES.length)];
-}
+function pickQuote() { return QUOTES[Math.floor(Math.random() * QUOTES.length)]; }
 
 function italiciseTitle(title) {
   const words = title.split(' ');
@@ -157,7 +231,6 @@ async function pickFilm(opts = {}) {
   const movie = pool[Math.floor(Math.random() * pool.length)];
   state.currentMovie = movie;
 
-  // Pull poster
   let posterUrl = null;
   try {
     const res = await fetch(`${API_BASE}/poster?url=${encodeURIComponent(movie.url)}`);
@@ -165,24 +238,24 @@ async function pickFilm(opts = {}) {
     posterUrl = data.image;
   } catch (e) {}
 
-  // Determine mood metadata
-  const chosenMoods = Array.from(state.selectedMoods);
-  const moodKey = chosenMoods[0] || 'slow-burn';
-  const meta = MOODS_META[moodKey] || MOODS_META['slow-burn'];
+  const moodDescription = composeMoodDescription();
+  const moodDisplay = state.selectedMoods.size > 0
+    ? Array.from(state.selectedMoods)[0]
+    : (state.moodText ? 'Your own words' : 'Open');
 
-  // Render
   $('resultPoster').src = posterUrl || '';
   $('resultPoster').alt = movie.title;
   $('resultTitle').innerHTML = italiciseTitle(movie.title);
   $('resultMeta').innerHTML = [movie.year, 'Letterboxd'].filter(Boolean).join(' &nbsp;·&nbsp; ');
   $('resultDirector').textContent = '';
   $('resultQuote').textContent = pickQuote();
-  $('statMood').textContent = meta.mood;
-  $('statPace').textContent = meta.pace;
+  $('statMood').textContent = moodDisplay.charAt(0).toUpperCase() + moodDisplay.slice(1);
+  $('statPace').textContent = state.runtime
+    ? RUNTIME_OPTIONS.find(o => o.value === state.runtime).label
+    : 'Unhurried';
   $('watchLink').href = movie.url;
 
-  // Save to history
-  const entry = { ...movie, poster: posterUrl, when: Date.now(), mood: meta.mood };
+  const entry = { ...movie, poster: posterUrl, when: Date.now(), mood: moodDisplay };
   state.history.unshift(entry);
   state.history = state.history.slice(0, 20);
   localStorage.setItem('ww_history', JSON.stringify(state.history));
@@ -203,7 +276,7 @@ $('backBtn').addEventListener('click', () => {
   setProgrammeEyebrow();
 });
 
-// ── SETTINGS SHEET ──
+// SHEET
 function openSheet() {
   $('currentUser').textContent = state.username || '';
   $('sheetBackdrop').hidden = false;
@@ -239,7 +312,7 @@ $('libBackBtn').addEventListener('click', () => {
   setProgrammeEyebrow();
 });
 
-// ── RECENTLY PROGRAMMED ──
+// LIBRARY
 function timeAgo(ts) {
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60000);
@@ -272,21 +345,22 @@ function renderLibrary() {
   `).join('');
 }
 
-// ── BOOT ──
+// BOOT
 async function boot() {
+  disclosures.push(buildDisclosure('decade', DECADE_OPTIONS, 'decadeValue'));
+  disclosures.push(buildDisclosure('runtime', RUNTIME_OPTIONS, 'runtimeValue'));
+
   if (!state.username) {
     show('onboarding');
     return;
   }
 
-  // Load cached watchlist, refresh in background
   const cached = localStorage.getItem('ww_watchlist');
   if (cached) state.watchlist = JSON.parse(cached);
 
   show('home');
   setProgrammeEyebrow();
 
-  // Refresh watchlist quietly in background
   try {
     const res = await fetch(`${API_BASE}/watchlist/${state.username}`);
     const data = await res.json();
