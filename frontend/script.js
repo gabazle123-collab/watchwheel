@@ -1,5 +1,5 @@
 
-const API_BASE = 'REPLACE_WITH_RENDER_URL';
+const API_BASE = 'https://watchwheel.onrender.com';
 
 let watchlist = [];
 
