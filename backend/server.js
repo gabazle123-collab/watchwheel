@@ -165,19 +165,82 @@ app.get('/watchlist/:username', async (req, res) => {
   }
 });
 
+function parseIso8601Duration(dur) {
+  if (!dur) return null;
+  const hours = parseInt(dur.match(/(\d+)H/)?.[1] || '0');
+  const mins  = parseInt(dur.match(/(\d+)M/)?.[1] || '0');
+  const total = hours * 60 + mins;
+  return total > 0 ? total : null;
+}
+
 app.get('/poster', async (req, res) => {
   try {
-    const response = await axios.get(req.query.url, {
+    const filmUrl = req.query.url;
+    const response = await axios.get(filmUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       }
     });
     const $ = cheerio.load(response.data);
     const image = $('meta[property="og:image"]').attr('content') || null;
-    res.json({ image });
+
+    // Extract runtime from JSON-LD and cache both poster + runtime
+    let runtimeMinutes = null;
+    const ldJson = $('script[type="application/ld+json"]').first().html();
+    if (ldJson) {
+      try {
+        const ld = JSON.parse(ldJson);
+        runtimeMinutes = parseIso8601Duration(ld.duration);
+      } catch {}
+    }
+
+    if (supabase && filmUrl) {
+      const upsertData = { letterboxd_url: filmUrl, cached_at: new Date().toISOString() };
+      if (image)          upsertData.poster_url      = image;
+      if (runtimeMinutes) upsertData.runtime_minutes = runtimeMinutes;
+      supabase.from('film_metadata_cache').upsert(upsertData, { onConflict: 'letterboxd_url' })
+        .catch(() => {});
+    }
+
+    res.json({ image, runtime_minutes: runtimeMinutes });
   } catch (e) {
-    res.json({ image: null });
+    res.json({ image: null, runtime_minutes: null });
   }
+});
+
+// GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
+app.get('/api/unsubscribe', async (req, res) => {
+  const { uid } = req.query;
+  if (!uid || !supabase) {
+    return res.status(400).send('Invalid request.');
+  }
+  await supabase.from('profiles').update({ digest_opt_in: false }).eq('id', uid);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unsubscribed &middot; WatchWheel</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400&display=swap" rel="stylesheet">
+  <style>
+    body { margin:0; padding:0; background:#f0e9d8; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .card { max-width:420px; padding:48px 40px; text-align:center; }
+    .wordmark { font-family:'Fraunces',Georgia,serif; font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:#1a2333; margin:0 0 24px; }
+    .rule { height:1px; background:#b8956a; opacity:0.5; margin:0 0 28px; }
+    h1 { font-family:'Fraunces',Georgia,serif; font-size:26px; font-weight:400; color:#1a2333; margin:0 0 16px; line-height:1.15; }
+    p { font-family:'Fraunces',Georgia,serif; font-style:italic; font-size:14px; color:#5a6272; line-height:1.6; margin:0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <p class="wordmark">WATCHWHEEL</p>
+    <div class="rule"></div>
+    <h1>The programme has been cancelled.</h1>
+    <p>You won&rsquo;t receive any more digest emails. You can re-enable them from your account settings at any time.</p>
+  </div>
+</body>
+</html>`);
 });
 
 const PORT = process.env.PORT || 3000;
