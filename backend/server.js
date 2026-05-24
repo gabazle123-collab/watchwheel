@@ -7,24 +7,18 @@ const app = express();
 app.use(cors());
 
 async function scrapeWatchlist(username) {
-  // Fetch page 1 first to find out total number of pages
   const firstUrl = `https://letterboxd.com/${username}/watchlist/`;
   const firstResponse = await axios.get(firstUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     }
   });
-  const $ = cheerio.load(firstResponse.data);
-
-  // Get total movie count from the page
-  const totalText = $('.js-watchlist-content').attr('data-num-entries') || '0';
-  const total = parseInt(totalText);
+  const $first = cheerio.load(firstResponse.data);
+  const total = parseInt($first('.js-watchlist-content').attr('data-num-entries') || '0');
   const totalPages = Math.ceil(total / 28);
 
-  // Build all page URLs
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
-  // Fetch all pages in parallel
   const pageResponses = await Promise.all(
     pageNumbers.map(page =>
       axios.get(`https://letterboxd.com/${username}/watchlist/page/${page}/`, {
@@ -35,7 +29,6 @@ async function scrapeWatchlist(username) {
     )
   );
 
-  // Parse all pages
   const movies = [];
   for (const response of pageResponses) {
     const $ = cheerio.load(response.data);
@@ -49,13 +42,6 @@ async function scrapeWatchlist(username) {
         movies.push({ title, year, url: 'https://letterboxd.com' + link });
       }
     });
-  }
-
-  return movies;
-}
-
-    page++;
-    if (page > 100) break; // safety limit — handles up to 1400 movies
   }
 
   return movies;
