@@ -1,11 +1,37 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 
 const app = express();
-
 app.use(cors());
+
+async function getWatchlist(username) {
+  const url = `https://letterboxd.com/${username}/watchlist/rss/`;
+  
+  const response = await axios.get(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; WatchWheel/1.0)',
+    }
+  });
+
+  const xml = response.data;
+
+  const movies = [];
+  const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+
+  for (const item of items) {
+    const title = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] || '';
+    const link = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
+    const year = title.match(/\((\d{4})\)/)?.[1] || '';
+    const cleanTitle = title.replace(/\s*\(\d{4}\)/, '').trim();
+
+    if (cleanTitle) {
+      movies.push({ title: cleanTitle, year, url: link });
+    }
+  }
+
+  return movies;
+}
 
 app.get('/', (req, res) => {
   res.send('WatchWheel backend running');
@@ -13,51 +39,13 @@ app.get('/', (req, res) => {
 
 app.get('/watchlist/:username', async (req, res) => {
   try {
-    const username = req.params.username;
-
-    const url = `https://letterboxd.com/${username}/watchlist/`;
-
-const response = await axios.get(url, {
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  }
-});
-
-    const html = response.data;
-
-    const $ = cheerio.load(html);
-
-const movies = [];
-
-const regex = /"filmSlug":"(.*?)".*?"name":"(.*?)"/g;
-
-let match;
-
-while ((match = regex.exec(html)) !== null) {
-  const slug = match[1];
-  const title = match[2];
-
-  movies.push({
-    title,
-    url: `https://letterboxd.com/film/${slug}/`
-  });
-}
-
+    const movies = await getWatchlist(req.params.username);
     res.json({ movies });
-
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      error: 'Failed to fetch watchlist'
-    });
+  } catch (error) {
+    console.error('Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch watchlist' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
