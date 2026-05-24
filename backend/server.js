@@ -17,15 +17,21 @@ async function scrapeWatchlist(username) {
 
   const movies = [];
 
-  $('.poster-container').each((_, el) => {
-    const film = $(el).find('.film-poster');
+$('li.poster-container').each((_, el) => {
+  const film = $(el).find('div[data-film-slug]');
 
+  const title = film.attr('data-film-name');
+  const year = film.attr('data-film-release-year');
+  const slug = film.attr('data-film-slug');
+
+  if (title) {
     movies.push({
-      title: film.attr('data-film-name'),
-      year: film.attr('data-film-release-year'),
-      url: 'https://letterboxd.com' + film.attr('data-target-link')
+      title,
+      year,
+      url: `https://letterboxd.com/film/${slug}/`
     });
-  });
+  }
+});
 
   return movies.filter(movie => movie.title);
 }
