@@ -1,314 +1,39 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-}
-
-body {
-  font-family: -apple-system, 'Inter', Arial, sans-serif;
-  background: #071120;
-  color: #F4F1EA;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  position: relative;
-  overflow-x: hidden;
-}
-
-/* Atmospheric background */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(23, 32, 51, 0.8) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(166, 61, 64, 0.04) 0%, transparent 60%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Subtle film grain */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  opacity: 0.4;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.container {
-  width: 100%;
-  max-width: 480px;
-  position: relative;
-  z-index: 1;
-}
-
-.card {
-  background: rgba(17, 24, 39, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  padding: 28px 24px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 32px 80px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-/* Header */
-h1 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 1.9rem;
-  font-weight: 700;
-  color: #F4F1EA;
-  letter-spacing: -0.4px;
-  margin-bottom: 6px;
-}
-
-h1 img {
-  height: 44px;
-  width: auto;
-  flex-shrink: 0;
-}
-
-.subtitle {
-  color: #A8B0BF;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  margin-bottom: 24px;
-  letter-spacing: 0.01em;
-}
-
-/* Input row */
-.search-row {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-input {
-  flex: 1;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(7, 17, 32, 0.9);
-  color: #F4F1EA;
-  font-size: 1rem;
-  font-family: inherit;
-  outline: none;
-  -webkit-appearance: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-input::placeholder {
-  color: #3D4A5C;
-}
-
-input:focus {
-  border-color: rgba(217, 119, 6, 0.45);
-  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.07);
-}
-
-/* Buttons */
-button {
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  font-weight: 600;
-  font-family: inherit;
-  transition: all 0.18s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-button:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-#loadBtn {
-  background: transparent;
-  color: #A8B0BF;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0 18px;
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  height: 48px;
-}
-
-#loadBtn:hover:not(:disabled) {
-  color: #F4F1EA;
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-#loadBtn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.pick-btn {
-  width: 100%;
-  padding: 17px;
-  background: #D97706;
-  color: #F4F1EA;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  box-shadow:
-    0 4px 20px rgba(217, 119, 6, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.pick-btn:hover:not(:disabled) {
-  background: #B45309;
-  box-shadow:
-    0 6px 28px rgba(217, 119, 6, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transform: translateY(-1px);
-}
-
-.pick-btn:active:not(:disabled) {
-  transform: scale(0.98);
-  box-shadow: 0 2px 12px rgba(217, 119, 6, 0.3);
-}
-
-/* Status */
-#status {
-  margin-top: 14px;
-  color: #A8B0BF;
-  font-size: 0.8rem;
-  letter-spacing: 0.03em;
-  min-height: 18px;
-  text-align: center;
-}
-
-/* Result card */
-.result-card {
-  margin-top: 20px;
-  text-align: center;
-  padding: 28px 20px;
-  border-radius: 20px;
-  background: rgba(7, 17, 32, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Red accent top line */
-.result-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 15%;
-  right: 15%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #A63D40, transparent);
-  opacity: 0.7;
-}
-
-/* Subtle bottom glow */
-.result-card::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background: linear-gradient(to top, rgba(166, 61, 64, 0.03), transparent);
-  pointer-events: none;
-}
-
-.badge {
-  display: inline-block;
-  color: #A63D40;
-  border: 1px solid rgba(166, 61, 64, 0.35);
-  padding: 5px 13px;
-  border-radius: 999px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  margin-bottom: 18px;
-}
-
-#movieTitle {
-  font-size: 1.65rem;
-  font-weight: 700;
-  color: #F4F1EA;
-  letter-spacing: -0.2px;
-  line-height: 1.2;
-  margin-bottom: 8px;
-}
-
-#movieMeta {
-  color: #A8B0BF;
-  font-size: 0.8rem;
-  letter-spacing: 0.03em;
-}
-
-#poster img {
-  width: 140px;
-  border-radius: 10px;
-  margin-top: 20px;
-  box-shadow:
-    0 16px 48px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* Desktop */
-@media (min-width: 640px) {
-  .card {
-    padding: 40px 36px;
-  }
-
-  h1 {
-    font-size: 2.6rem;
-  }
-
-  h1 img {
-    height: 56px;
-  }
-
-  .subtitle {
-    font-size: 0.95rem;
-    margin-bottom: 28px;
-  }
-
-  #movieTitle {
-    font-size: 2rem;
-  }
-
-  #poster img {
-    width: 180px;
-  }
-}
-
-/* Animations */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.spinning {
-  animation: spin 0.8s linear infinite;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WatchWheel</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>
+        <img src="logo.png" alt="WatchWheel" style="height:120px;">
+        WatchWheel
+      </h1>
+      <p class="subtitle">
+        A film from your watchlist, chosen for tonight.
+      </p>
+      <div class="divider"></div>
+      <div class="search-row">
+        <input type="text" id="username" placeholder="letterboxd username">
+        <button id="loadBtn">Load</button>
+      </div>
+      <button id="pickBtn" class="pick-btn">
+        Select Tonight's Film
+      </button>
+      <div id="status"></div>
+      <div class="result-card">
+        <div class="badge">Tonight's Screening</div>
+        <h2 id="movieTitle">No film selected</h2>
+        <p id="movieMeta"></p>
+        <div id="poster"></div>
+      </div>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
