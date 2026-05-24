@@ -174,47 +174,68 @@ function parseIso8601Duration(dur) {
 }
 
 app.get('/poster', async (req, res) => {
+  const filmUrl = req.query.url;
+  let image = null, tagline = null, synopsis = null, runtimeMinutes = null;
+
   try {
-    const filmUrl = req.query.url;
+    if (!filmUrl) throw new Error('No url query param');
+
     const response = await axios.get(filmUrl, {
+      // Don't throw on 4xx — let us log the status and still return gracefully
+      validateStatus: () => true,
+      timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      }
+        'User-Agent':                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language':           'en-US,en;q=0.9',
+        'Accept-Encoding':           'gzip, deflate, br',
+        'DNT':                       '1',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control':             'no-cache',
+      },
     });
-    const $ = cheerio.load(response.data);
-    const image = $('meta[property="og:image"]').attr('content') || null;
 
-    // Tagline — Letterboxd puts it in <h4 class="tagline">
-    const tagline = $('h4.tagline').first().text().trim() || null;
+    console.log(`[poster] ${filmUrl} → HTTP ${response.status} (${String(response.data).length} bytes)`);
 
-    // Extract runtime + synopsis from JSON-LD, then fall back to meta description
-    let runtimeMinutes = null;
-    let synopsis       = null;
-    const ldJson = $('script[type="application/ld+json"]').first().html();
-    if (ldJson) {
-      try {
-        const ld = JSON.parse(ldJson);
-        runtimeMinutes = parseIso8601Duration(ld.duration);
-        if (ld.description) synopsis = ld.description.trim();
-      } catch {}
+    if (response.status !== 200) {
+      console.warn(`[poster] Non-200 from Letterboxd — skipping scrape`);
+    } else {
+      const $ = cheerio.load(response.data);
+
+      image   = $('meta[property="og:image"]').attr('content') || null;
+      tagline = $('h4.tagline').first().text().trim() || null;
+
+      // Runtime + synopsis from JSON-LD
+      const ldRaw = $('script[type="application/ld+json"]').first().html();
+      if (ldRaw) {
+        try {
+          const ld = JSON.parse(ldRaw);
+          runtimeMinutes = parseIso8601Duration(ld.duration);
+          if (ld.description) synopsis = ld.description.trim();
+        } catch (parseErr) {
+          console.error('[poster] JSON-LD parse error:', parseErr.message);
+        }
+      }
+      // Fallback synopsis: meta description
+      if (!synopsis) {
+        synopsis = $('meta[name="description"]').attr('content')?.trim() || null;
+      }
+
+      console.log(`[poster] scraped → image=${!!image} tagline=${JSON.stringify(tagline)} synopsis=${synopsis?.length ?? 0}ch runtime=${runtimeMinutes}`);
+
+      if (supabase) {
+        const upsertData = { letterboxd_url: filmUrl, cached_at: new Date().toISOString() };
+        if (image)          upsertData.poster_url      = image;
+        if (runtimeMinutes) upsertData.runtime_minutes = runtimeMinutes;
+        supabase.from('film_metadata_cache').upsert(upsertData, { onConflict: 'letterboxd_url' })
+          .catch((err) => console.error('[poster] cache upsert error:', err.message));
+      }
     }
-    if (!synopsis) {
-      const metaDesc = $('meta[name="description"]').attr('content') || null;
-      if (metaDesc) synopsis = metaDesc.trim();
-    }
-
-    if (supabase && filmUrl) {
-      const upsertData = { letterboxd_url: filmUrl, cached_at: new Date().toISOString() };
-      if (image)          upsertData.poster_url      = image;
-      if (runtimeMinutes) upsertData.runtime_minutes = runtimeMinutes;
-      supabase.from('film_metadata_cache').upsert(upsertData, { onConflict: 'letterboxd_url' })
-        .catch(() => {});
-    }
-
-    res.json({ image, tagline, synopsis, runtime_minutes: runtimeMinutes });
   } catch (e) {
-    res.json({ image: null, runtime_minutes: null });
+    console.error(`[poster] fetch error for ${filmUrl}:`, e.message);
   }
+
+  res.json({ image, tagline, synopsis, runtime_minutes: runtimeMinutes });
 });
 
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
