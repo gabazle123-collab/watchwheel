@@ -1,39 +1,280 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WatchWheel</title>
-  <link rel="icon" type="image/png" href="logo.png">
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div class="container">
-    <div class="card">
-      <h1>
-        <img src="logo.png" alt="WatchWheel" style="height:120px;">
-        WatchWheel
-      </h1>
-      <p class="subtitle">
-        A film from your watchlist, chosen for tonight.
-      </p>
-      <div class="divider"></div>
-      <div class="search-row">
-        <input type="text" id="username" placeholder="letterboxd username">
-        <button id="loadBtn">Load</button>
-      </div>
-      <button id="pickBtn" class="pick-btn">
-        Select Tonight's Film
-      </button>
-      <div id="status"></div>
-      <div class="result-card">
-        <div class="badge">Tonight's Screening</div>
-        <h2 id="movieTitle">No film selected</h2>
-        <p id="movieMeta"></p>
-        <div id="poster"></div>
-      </div>
-    </div>
-  </div>
-  <script src="script.js"></script>
-</body>
-</html>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, 'Inter', Georgia, serif;
+  background: #0D1117;
+  color: #E8E0D0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Soft atmospheric vignette */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 100% 60% at 50% 0%, #161D2E 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.container {
+  width: 100%;
+  max-width: 440px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header ── */
+.card {
+  background: transparent;
+  padding: 0;
+}
+
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #E8E0D0;
+  letter-spacing: -0.2px;
+  margin-bottom: 6px;
+}
+
+h1 img {
+  height: 38px;
+  width: auto;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.subtitle {
+  color: #6B7280;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  margin-bottom: 28px;
+  letter-spacing: 0.02em;
+  font-style: italic;
+}
+
+/* ── Divider ── */
+.divider {
+  height: 1px;
+  background: rgba(232, 224, 208, 0.07);
+  margin-bottom: 24px;
+}
+
+/* ── Input section ── */
+.search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+input {
+  flex: 1;
+  padding: 13px 15px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 224, 208, 0.1);
+  background: rgba(22, 29, 46, 0.6);
+  color: #E8E0D0;
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  transition: border-color 0.25s ease;
+}
+
+input::placeholder {
+  color: #374151;
+  font-style: italic;
+}
+
+input:focus {
+  border-color: rgba(232, 224, 208, 0.2);
+}
+
+/* ── Buttons ── */
+button {
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+#loadBtn {
+  background: transparent;
+  color: #6B7280;
+  border: 1px solid rgba(232, 224, 208, 0.1);
+  padding: 0 16px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  height: 46px;
+  white-space: nowrap;
+}
+
+#loadBtn:hover:not(:disabled) {
+  color: #9CA3AF;
+  border-color: rgba(232, 224, 208, 0.18);
+}
+
+#loadBtn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pick-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 15px;
+  background: rgba(22, 29, 46, 0.8);
+  color: #C9B99A;
+  border: 1px solid rgba(201, 185, 154, 0.2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.pick-btn:hover:not(:disabled) {
+  background: rgba(30, 40, 62, 0.9);
+  border-color: rgba(201, 185, 154, 0.32);
+  color: #DDD0B8;
+}
+
+.pick-btn:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+/* ── Status ── */
+#status {
+  margin-top: 13px;
+  color: #4B5563;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  min-height: 16px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ── Result card ── */
+.result-card {
+  margin-top: 32px;
+  text-align: center;
+  padding: 32px 20px 28px;
+  border-radius: 16px;
+  background: rgba(16, 22, 36, 0.5);
+  border: 1px solid rgba(232, 224, 208, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Thin top accent */
+.result-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(139, 90, 80, 0.5), transparent);
+}
+
+.badge {
+  display: inline-block;
+  color: #6B7280;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(232, 224, 208, 0.07);
+  width: 100%;
+}
+
+#movieTitle {
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: #E8E0D0;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+
+#movieMeta {
+  color: #4B5563;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+#poster img {
+  width: 120px;
+  border-radius: 8px;
+  margin-top: 22px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  opacity: 0.92;
+  border: 1px solid rgba(232, 224, 208, 0.06);
+}
+
+/* ── Desktop ── */
+@media (min-width: 640px) {
+  h1 {
+    font-size: 2.2rem;
+  }
+
+  h1 img {
+    height: 48px;
+  }
+
+  .subtitle {
+    font-size: 0.88rem;
+  }
+
+  #movieTitle {
+    font-size: 1.85rem;
+  }
+
+  #poster img {
+    width: 150px;
+  }
+}
+
+/* ── Spin animation ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1.2s linear infinite;
+  opacity: 0.7;
+}
