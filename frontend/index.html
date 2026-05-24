@@ -52,7 +52,7 @@
       <p class="dek">Enter your Letterboxd username. We'll remember it.</p>
       <div class="input-row">
         <input type="text" id="usernameInput" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button class="btn-primary" id="pickBtn">Find tonight's film</button>
+        <button class="btn-primary" id="saveUsernameBtn">Begin</button>
       </div>
       <p id="onboardStatus" class="status"></p>
     </section>
@@ -66,17 +66,10 @@
       <!-- MOOD: FREE TEXT -->
       <div class="mood-section">
         <div class="eyebrow eyebrow-sm"><span class="rule"></span>Tonight feels like…</div>
-        <<textarea
-  id="moodText"
-  class="mood-input"
-  rows="3"
-  placeholder="Describe the evening… a rainy sunday, a quiet farewell, something my grandmother would love"
-  autocomplete="off"
-  spellcheck="false"
-></textarea>textarea
+        <textarea
           id="moodText"
           class="mood-input"
-          rows="1"
+          rows="3"
           placeholder="Describe the evening… a rainy sunday, a quiet farewell, something my grandmother would love"
           autocomplete="off"
           spellcheck="false"
@@ -105,9 +98,7 @@
               <span class="glass-affordance">›</span>
             </span>
           </button>
-          <div class="panel" data-disclosure-panel hidden>
-            <!-- options injected by JS -->
-          </div>
+          <div class="panel" data-disclosure-panel hidden></div>
         </div>
 
         <div class="disclosure" data-disclosure="runtime">
@@ -118,9 +109,7 @@
               <span class="glass-affordance">›</span>
             </span>
           </button>
-          <div class="panel" data-disclosure-panel hidden>
-            <!-- options injected by JS -->
-          </div>
+          <div class="panel" data-disclosure-panel hidden></div>
         </div>
       </div>
 
@@ -128,7 +117,7 @@
 
       <!-- CTA -->
       <div class="cta-stack">
-        <button class="btn-primary" id="pickBtn">Find tonight's film &nbsp;·&nbsp; ⌁</button>
+        <button class="btn-primary" id="pickBtn">Find tonight's film</button>
         <button class="btn-ghost" id="surpriseBtn">Surprise me entirely</button>
       </div>
     </section>
@@ -145,7 +134,7 @@
         <button class="icon-btn" id="favBtn" aria-label="Favourite">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
             <path d="M8 13.5 C8 13.5 2.5 10 2.5 6 C2.5 4 4 2.5 6 2.5 C7 2.5 8 3.2 8 4.2 C8 3.2 9 2.5 10 2.5 C12 2.5 13.5 4 13.5 6 C13.5 10 8 13.5 8 13.5 Z"/>
-        </svg>
+          </svg>
         </button>
       </nav>
 
