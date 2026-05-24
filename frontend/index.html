@@ -1,35 +1,29 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WatchWheel</title>
-<link rel="icon" type="image/jpeg" href="logo.jpeg">
+  <link rel="icon" type="image/jpeg" href="logo.jpeg">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
     <div class="card">
       <h1>
-  <img src="logo.jpeg" alt="WatchWheel" style="height:52px; vertical-align:middle; margin-right:12px; filter:brightness(0) invert(1);">
-  WatchWheel
-</h1>
+        <img src="logo.jpeg" alt="WatchWheel" style="height:64px; vertical-align:middle;">
+      </h1>
       <p class="subtitle">
         Enter your Letterboxd username and let fate decide tonight's movie.
       </p>
-
       <div class="search-row">
         <input type="text" id="username" placeholder="e.g. savadokic">
         <button id="loadBtn">Load Watchlist</button>
       </div>
-
       <button id="pickBtn" class="pick-btn">
         Pick For Me
       </button>
-
       <div id="status"></div>
-
       <div class="result-card">
         <div class="badge">TONIGHT'S PICK</div>
         <h2 id="movieTitle">No movie selected</h2>
@@ -38,7 +32,6 @@
       </div>
     </div>
   </div>
-
   <script src="script.js"></script>
 </body>
 </html>
