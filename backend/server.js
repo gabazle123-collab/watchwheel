@@ -1,51 +1,68 @@
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
+const PROXY = 'https://corsproxy.io/?';
 
-const app = express();
-app.use(cors());
+let watchlist = [];
 
-async function getWatchlist(username) {
-  const url = `https://letterboxd.com/${username}/watchlist/rss/`;
-  
-  const response = await axios.get(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; WatchWheel/1.0)',
-    }
-  });
+const usernameInput = document.getElementById('username');
+const loadBtn = document.getElementById('loadBtn');
+const pickBtn = document.getElementById('pickBtn');
+const status = document.getElementById('status');
+const movieTitle = document.getElementById('movieTitle');
+const movieMeta = document.getElementById('movieMeta');
 
-  const xml = response.data;
+loadBtn.addEventListener('click', async () => {
+  const username = usernameInput.value.trim();
+  if (!username) return;
 
-  const movies = [];
-  const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+  status.innerText = 'Loading watchlist...';
+  watchlist = [];
 
-  for (const item of items) {
-    const title = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] || '';
-    const link = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
-    const year = title.match(/\((\d{4})\)/)?.[1] || '';
-    const cleanTitle = title.replace(/\s*\(\d{4}\)/, '').trim();
-
-    if (cleanTitle) {
-      movies.push({ title: cleanTitle, year, url: link });
-    }
-  }
-
-  return movies;
-}
-
-app.get('/', (req, res) => {
-  res.send('WatchWheel backend running');
-});
-
-app.get('/watchlist/:username', async (req, res) => {
   try {
-    const movies = await getWatchlist(req.params.username);
-    res.json({ movies });
-  } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch watchlist' });
+    let page = 1;
+    while (true) {
+      const url = `https://letterboxd.com/${username}/watchlist/page/${page}/`;
+      const res = await fetch(PROXY + encodeURIComponent(url));
+      const html = await res.text();
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const films = doc.querySelectorAll('.film-poster');
+
+      if (films.length === 0) break;
+
+      films.forEach(film => {
+        const title = film.getAttribute('data-film-name');
+        const year = film.getAttribute('data-film-release-year');
+        const link = film.getAttribute('data-target-link');
+        if (title) {
+          watchlist.push({
+            title,
+            year,
+            url: 'https://letterboxd.com' + link
+          });
+        }
+      });
+
+      page++;
+    }
+
+    if (watchlist.length === 0) {
+      status.innerText = 'No movies found. Is the watchlist public?';
+    } else {
+      status.innerText = `Loaded ${watchlist.length} movies`;
+    }
+  } catch (err) {
+    status.innerText = 'Failed to fetch watchlist';
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+pickBtn.addEventListener('click', () => {
+  if (watchlist.length === 0) {
+    movieTitle.innerText = 'Load a watchlist first 🎥';
+    movieMeta.innerText = '';
+    return;
+  }
+
+  const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
+  movieTitle.innerText = movie.title;
+  movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
+});
