@@ -2,9 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import supabase from './supabase.js';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 async function scrapeWatchlist(username) {
   const firstUrl = `https://letterboxd.com/${username}/watchlist/`;
@@ -46,6 +48,103 @@ async function scrapeWatchlist(username) {
 
   return movies;
 }
+
+// ── Auth middleware ──────────────────────────────────────────────────────────
+
+async function requireAuth(req, res, next) {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Auth not configured — set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the server' });
+  }
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing Bearer token' });
+  }
+  const { data: { user }, error } = await supabase.auth.getUser(header.slice(7));
+  if (error || !user) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  req.user = user;
+  next();
+}
+
+// ── Profile routes ───────────────────────────────────────────────────────────
+
+// GET /api/profile — fetch the signed-in user's profile row
+app.get('/api/profile', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', req.user.id)
+    .single();
+  if (error) return res.status(404).json({ error: 'Profile not found' });
+  res.json(data);
+});
+
+// PATCH /api/profile — update allowed profile fields
+app.patch('/api/profile', requireAuth, async (req, res) => {
+  const allowed = ['letterboxd_username', 'digest_opt_in', 'digest_hour', 'timezone'];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (updates.digest_hour !== undefined) {
+    const h = parseInt(updates.digest_hour, 10);
+    if (isNaN(h) || h < 0 || h > 23) {
+      return res.status(400).json({ error: 'digest_hour must be an integer 0–23' });
+    }
+    updates.digest_hour = h;
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No valid fields provided' });
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', req.user.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// ── Film history routes ──────────────────────────────────────────────────────
+
+// GET /api/history — last 50 films served to this user
+app.get('/api/history', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('film_history')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .order('served_at', { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ history: data });
+});
+
+// POST /api/history — record a film pick (from app picker)
+app.post('/api/history', requireAuth, async (req, res) => {
+  const { letterboxd_url, title, year, poster_url, mood, source } = req.body;
+  if (!letterboxd_url || !title) {
+    return res.status(400).json({ error: 'letterboxd_url and title are required' });
+  }
+  const { data, error } = await supabase
+    .from('film_history')
+    .insert({
+      user_id: req.user.id,
+      letterboxd_url,
+      title,
+      year: year || null,
+      poster_url: poster_url || null,
+      mood: mood || null,
+      source: source || 'app',
+    })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
+});
+
+// ── Existing routes ──────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => res.send('WatchWheel backend running'));
 
