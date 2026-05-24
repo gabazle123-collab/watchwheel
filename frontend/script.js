@@ -25,22 +25,22 @@ loadBtn.addEventListener('click', async () => {
 
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
-      const films = doc.querySelectorAll('.film-poster');
+const films = doc.querySelectorAll('li[data-item-name]');
 
-      if (films.length === 0) break;
+if (films.length === 0) break;
 
-      films.forEach(film => {
-        const title = film.getAttribute('data-film-name');
-        const year = film.getAttribute('data-film-release-year');
-        const link = film.getAttribute('data-target-link');
-        if (title) {
-          watchlist.push({
-            title,
-            year,
-            url: 'https://letterboxd.com' + link
-          });
-        }
-      });
+films.forEach(film => {
+  const title = film.getAttribute('data-item-name');
+  const link = film.getAttribute('data-item-link');
+  const year = film.querySelector('img')?.getAttribute('alt')?.match(/\((\d{4})\)/)?.[1] || '';
+  if (title) {
+    watchlist.push({
+      title,
+      url: 'https://letterboxd.com' + link,
+      year
+    });
+  }
+});
 
       page++;
     }
