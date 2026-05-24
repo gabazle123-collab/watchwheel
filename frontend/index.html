@@ -169,6 +169,165 @@
       </div>
     </section>
 
+    <!-- AUTH ENTRY -->
+    <section id="auth-entry" class="screen" hidden>
+      <div class="eyebrow"><span class="rule"></span>A membership card</div>
+      <h1 class="headline">Reserve your <em>seat</em>.</h1>
+      <p class="dek">An account gives you cross-device history and a nightly film note chosen for you.</p>
+      <div class="cta-stack" style="margin-top:32px;">
+        <button class="btn-primary" id="goSignupBtn">Create an account</button>
+        <button class="btn-ghost" id="goSigninBtn">Sign in</button>
+        <button class="auth-guest-link" id="guestBtn">Continue as guest →</button>
+      </div>
+    </section>
+
+    <!-- SIGN UP -->
+    <section id="auth-signup" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="signupBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>
+        </button>
+        <span class="result-title">New member</span>
+        <span style="width:30px;"></span>
+      </nav>
+      <div class="eyebrow"><span class="rule"></span>A membership card</div>
+      <h1 class="headline">Begin the <em>record</em>.</h1>
+      <div class="auth-form">
+        <input type="email" id="signupEmail" placeholder="your email" autocomplete="email" inputmode="email">
+        <input type="password" id="signupPassword" placeholder="password — eight characters minimum" autocomplete="new-password">
+        <button class="btn-primary" id="signupSubmitBtn">Create account</button>
+      </div>
+      <p id="signupStatus" class="status"></p>
+      <p class="auth-switch">Already a member? <button class="link-btn" id="signupToSignin">Sign in</button></p>
+    </section>
+
+    <!-- SIGN IN -->
+    <section id="auth-signin" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="signinBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>
+        </button>
+        <span class="result-title">Welcome back</span>
+        <span style="width:30px;"></span>
+      </nav>
+      <div class="eyebrow"><span class="rule"></span>The house is open</div>
+      <h1 class="headline">Take your <em>seat</em>.</h1>
+      <div class="auth-form">
+        <input type="email" id="signinEmail" placeholder="your email" autocomplete="email" inputmode="email">
+        <input type="password" id="signinPassword" placeholder="password" autocomplete="current-password">
+        <button class="btn-primary" id="signinSubmitBtn">Sign in</button>
+      </div>
+      <p id="signinStatus" class="status"></p>
+      <p class="auth-switch">No account? <button class="link-btn" id="signinToSignup">Create one</button></p>
+      <p class="auth-switch"><button class="link-btn" id="forgotPasswordBtn">Forgot password?</button></p>
+    </section>
+
+    <!-- ONBOARDING WIZARD (signed-in new users) -->
+    <section id="wizard" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="wizardBackBtn" aria-label="Back" style="visibility:hidden;">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>
+        </button>
+        <span class="wizard-step-label" id="wizardStepLabel">Step 1 of 3</span>
+        <span style="width:30px;"></span>
+      </nav>
+
+      <!-- Step 1: Letterboxd username + live preview -->
+      <div id="wz1" class="wizard-step">
+        <div class="eyebrow"><span class="rule"></span>Your library</div>
+        <h1 class="headline">Where is your <em>watchlist</em>?</h1>
+        <p class="dek">Enter your Letterboxd username. We'll confirm your watchlist is reachable.</p>
+        <div class="input-row">
+          <input type="text" id="wizUsername" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="btn-primary" id="wizPreviewBtn" style="white-space:nowrap; min-width:84px;">Preview</button>
+        </div>
+        <p id="wizUsernameStatus" class="status"></p>
+        <div id="wizPreview" class="wiz-preview" hidden></div>
+        <button class="btn-primary" id="wz1NextBtn" style="margin-top:22px;" hidden>This is my list →</button>
+      </div>
+
+      <!-- Step 2: Digest opt-in -->
+      <div id="wz2" class="wizard-step" hidden>
+        <div class="eyebrow"><span class="rule"></span>The evening note</div>
+        <h1 class="headline">A short note, once a <em>day</em>.</h1>
+        <p class="dek">Five films from your watchlist, chosen for the mood of the day. You can change the time or turn it off anytime.</p>
+        <button class="digest-toggle active" id="digestToggle">
+          <div class="digest-toggle-inner">
+            <span class="digest-toggle-label">Send me the nightly digest</span>
+            <div class="toggle-check checked" id="toggleCheck">
+              <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7 L5.5 10 L11.5 4"/></svg>
+            </div>
+          </div>
+        </button>
+        <div class="cta-stack" style="margin-top:28px;">
+          <button class="btn-primary" id="wz2NextBtn">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Digest time -->
+      <div id="wz3" class="wizard-step" hidden>
+        <div class="eyebrow"><span class="rule"></span>The hour</div>
+        <h1 class="headline">When would you like <em>it</em>?</h1>
+        <p class="dek">We'll send your evening programme at this time each day, in your local timezone.</p>
+        <div class="time-options" id="timeOptions"></div>
+        <div class="cta-stack" style="margin-top:22px;">
+          <button class="btn-primary" id="wz3DoneBtn">Begin →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACCOUNT SETTINGS -->
+    <section id="account" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="accountBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>
+        </button>
+        <span class="result-title">Account</span>
+        <span style="width:30px;"></span>
+      </nav>
+      <div class="eyebrow"><span class="rule"></span>Your membership</div>
+      <h1 class="headline" style="font-size:22px;">Good to have <em>you</em>.</h1>
+      <p class="account-since" id="accountSince"></p>
+
+      <div class="account-section">
+        <div class="account-row">
+          <span class="account-label">Letterboxd</span>
+          <div class="account-value-row">
+            <span class="account-value" id="accountUsername">—</span>
+            <button class="link-btn" id="changeUsernameBtn">Change</button>
+          </div>
+        </div>
+        <div id="changeUsernameForm" class="change-field" hidden>
+          <input type="text" id="newUsernameInput" placeholder="new username" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="btn-primary" id="saveNewUsernameBtn" style="margin-top:8px; font-size:12px;">Save</button>
+          <p id="changeUsernameStatus" class="status"></p>
+        </div>
+      </div>
+
+      <div class="account-section">
+        <div class="eyebrow eyebrow-sm" style="margin-bottom:14px;"><span class="rule"></span>Evening digest</div>
+        <div class="account-row">
+          <span class="account-label">Nightly digest</span>
+          <button class="toggle-check" id="accountDigestToggle" aria-label="Toggle digest">
+            <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7 L5.5 10 L11.5 4"/></svg>
+          </button>
+        </div>
+        <div class="account-row" id="digestHourRow">
+          <span class="account-label">Send at</span>
+          <div class="account-value-row">
+            <span class="account-value" id="accountDigestHour">—</span>
+            <button class="link-btn" id="changeDigestHourBtn">Change</button>
+          </div>
+        </div>
+        <div class="time-options" id="changeHourOptions" hidden style="margin-top:12px;"></div>
+      </div>
+
+      <div class="account-section" style="border-bottom:none;">
+        <button class="btn-ghost" id="signOutBtn" style="width:100%; margin-bottom:10px;">Sign out</button>
+        <button class="btn-ghost danger-btn" id="deleteAccountBtn" style="width:100%;">Delete account</button>
+      </div>
+    </section>
+
     <!-- RECENTLY PROGRAMMED -->
     <section id="library" class="screen" hidden>
       <nav class="result-topbar">
@@ -197,12 +356,17 @@
       <span>Recently programmed</span>
       <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#9a907d" stroke-width="1.3"><path d="M6 3 L11 8 L6 13"/></svg>
     </div>
+    <div class="sheet-row" id="sheetAccount" hidden>
+      <span>Account</span>
+      <span class="sheet-meta" id="currentUser"></span>
+    </div>
     <div class="sheet-row" id="sheetChangeUser">
       <span>Change username</span>
-      <span class="sheet-meta" id="currentUser"></span>
+      <span class="sheet-meta" id="currentUserGuest"></span>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

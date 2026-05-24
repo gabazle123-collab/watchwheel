@@ -382,3 +382,170 @@ input:focus { border-color: rgba(184,149,106,0.4); }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .screen:not([hidden]) { animation: fadein 0.5s ease; }
+
+/* ── AUTH SCREENS ────────────────────────────────────────────────────────── */
+
+.auth-form { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+
+/* auth-entry guest link */
+.auth-guest-link {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-serif); font-style: italic; font-size: 12px;
+  color: var(--ww-taupe); padding: 10px 0; text-align: center;
+  transition: color 0.2s ease; -webkit-tap-highlight-color: transparent;
+}
+.auth-guest-link:hover { color: var(--ww-cream-dim); }
+
+/* inline text links (switch between sign-in / sign-up, forgot password) */
+.link-btn {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-serif); font-style: italic; font-size: 12px;
+  color: var(--ww-amber); padding: 0;
+  text-decoration: underline; text-underline-offset: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+.link-btn:hover { color: var(--ww-amber-bright); }
+
+.auth-switch {
+  font-family: var(--font-serif); font-style: italic; font-size: 12px;
+  color: var(--ww-taupe); margin-top: 14px; text-align: center;
+}
+
+/* ── WIZARD ──────────────────────────────────────────────────────────────── */
+
+.wizard-step-label {
+  font-family: var(--font-sans); font-size: 11px;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--ww-taupe-dim);
+}
+
+/* preview grid of 6 films */
+.wiz-preview { margin-top: 20px; }
+.wiz-preview-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px;
+}
+.wiz-preview-item {
+  background: rgba(20,28,40,0.5); border: 1px solid var(--ww-border);
+  border-radius: 8px; padding: 9px 10px;
+  font-family: var(--font-serif); font-size: 11px;
+  color: var(--ww-cream-dim); line-height: 1.3;
+}
+.wiz-film-year {
+  font-family: var(--font-sans); font-size: 9px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ww-taupe-dim); margin-top: 4px;
+}
+
+/* ── DIGEST TOGGLE (wizard step 2) ──────────────────────────────────────── */
+
+.digest-toggle {
+  width: 100%; text-align: left;
+  border: 1px solid var(--ww-border-strong); border-radius: 12px;
+  padding: 14px 16px; background: rgba(20,28,40,0.4);
+  cursor: pointer; margin-top: 8px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit; color: inherit;
+}
+.digest-toggle.active {
+  border-color: rgba(184,149,106,0.4);
+  background: rgba(184,149,106,0.06);
+}
+.digest-toggle-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.digest-toggle-label { font-family: var(--font-serif); font-size: 14px; color: var(--ww-cream); }
+
+/* shared check circle (wizard + account screen) */
+.toggle-check {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+  border: 1px solid var(--ww-border-strong);
+  display: grid; place-items: center;
+  color: transparent; cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  background: transparent; -webkit-tap-highlight-color: transparent;
+}
+.toggle-check.checked {
+  background: rgba(184,149,106,0.18);
+  border-color: rgba(184,149,106,0.55);
+  color: var(--ww-amber-text);
+}
+
+/* ── TIME OPTIONS (wizard step 3 + account) ──────────────────────────────── */
+
+.time-options { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+.time-option {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border: 1px solid var(--ww-border); border-radius: 10px;
+  background: transparent; cursor: pointer; text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent; font-family: inherit; color: inherit;
+}
+.time-option:hover { border-color: rgba(236,228,211,0.16); }
+.time-option.selected {
+  border-color: rgba(184,149,106,0.4);
+  background: rgba(184,149,106,0.07);
+}
+.time-option .time-label {
+  font-family: var(--font-serif); font-size: 14px; color: var(--ww-cream-dim);
+}
+.time-option.selected .time-label { color: var(--ww-amber-text); }
+.time-option .time-sub {
+  font-family: var(--font-sans); font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ww-taupe-dim);
+}
+
+/* ── ACCOUNT SCREEN ──────────────────────────────────────────────────────── */
+
+.account-since {
+  font-family: var(--font-serif); font-style: italic; font-size: 13px;
+  color: var(--ww-taupe); margin-top: -4px; margin-bottom: 28px;
+}
+.account-section {
+  border-top: 1px solid var(--ww-border); padding: 18px 0;
+}
+.account-row {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 30px; margin-bottom: 12px;
+}
+.account-row:last-child { margin-bottom: 0; }
+.account-label {
+  font-family: var(--font-sans); font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--ww-taupe-dim);
+}
+.account-value {
+  font-family: var(--font-serif); font-size: 14px; color: var(--ww-cream);
+}
+.account-value-row { display: flex; align-items: center; gap: 10px; }
+
+.change-field {
+  margin-top: 10px; padding: 14px; border: 1px solid var(--ww-border);
+  border-radius: 12px; background: rgba(14,22,32,0.3);
+}
+
+.danger-btn {
+  border-color: rgba(160,60,60,0.28) !important;
+  color: rgba(200,120,120,0.75) !important;
+}
+.danger-btn:hover {
+  border-color: rgba(180,70,70,0.5) !important;
+  color: rgba(220,140,140,0.95) !important;
+}
+
+/* ── GUEST PROMPT (home screen banner) ───────────────────────────────────── */
+
+.guest-prompt {
+  background: rgba(184,149,106,0.06);
+  border: 1px solid rgba(184,149,106,0.18);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;
+}
+.guest-prompt-text {
+  font-family: var(--font-serif); font-style: italic; font-size: 13px;
+  color: var(--ww-cream-dim); line-height: 1.5; margin-bottom: 12px;
+}
+.guest-prompt-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guest-prompt-dismiss {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-serif); font-style: italic; font-size: 12px;
+  color: var(--ww-taupe); -webkit-tap-highlight-color: transparent;
+  padding: 4px 0;
+}
+.guest-prompt-dismiss:hover { color: var(--ww-cream-dim); }

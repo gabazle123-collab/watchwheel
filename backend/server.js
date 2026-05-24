@@ -144,6 +144,13 @@ app.post('/api/history', requireAuth, async (req, res) => {
   res.status(201).json(data);
 });
 
+// DELETE /api/account — permanently removes the auth.users row (cascades to profiles + history)
+app.delete('/api/account', requireAuth, async (req, res) => {
+  const { error } = await supabase.auth.admin.deleteUser(req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 // ── Existing routes ──────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => res.send('WatchWheel backend running'));
