@@ -13,56 +13,17 @@ loadBtn.addEventListener('click', async () => {
   const username = usernameInput.value.trim();
   if (!username) return;
 
-  status.innerText = 'Loading watchlist...';
-  watchlist = [];
+  status.innerText = 'Loading...';
 
-  try {
-    let page = 1;
-    while (true) {
-      const url = `https://letterboxd.com/${username}/watchlist/page/${page}/`;
-      const res = await fetch(PROXY + encodeURIComponent(url));
-      const html = await res.text();
+  const url = `https://letterboxd.com/${username}/watchlist/`;
+  const res = await fetch(PROXY + encodeURIComponent(url));
+  const html = await res.text();
 
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-const films = doc.querySelectorAll('li[data-item-name]');
+  console.log('HTML length:', html.length);
+  console.log('First 2000 chars:', html.substring(0, 2000));
+  console.log('Contains data-film-name:', html.includes('data-film-name'));
+  console.log('Contains data-item-name:', html.includes('data-item-name'));
+  console.log('Contains film-poster:', html.includes('film-poster'));
 
-if (films.length === 0) break;
-
-films.forEach(film => {
-  const title = film.getAttribute('data-item-name');
-  const link = film.getAttribute('data-item-link');
-  const year = film.querySelector('img')?.getAttribute('alt')?.match(/\((\d{4})\)/)?.[1] || '';
-  if (title) {
-    watchlist.push({
-      title,
-      url: 'https://letterboxd.com' + link,
-      year
-    });
-  }
-});
-
-      page++;
-    }
-
-    if (watchlist.length === 0) {
-      status.innerText = 'No movies found. Is the watchlist public?';
-    } else {
-      status.innerText = `Loaded ${watchlist.length} movies`;
-    }
-  } catch (err) {
-    status.innerText = 'Failed to fetch watchlist';
-  }
-});
-
-pickBtn.addEventListener('click', () => {
-  if (watchlist.length === 0) {
-    movieTitle.innerText = 'Load a watchlist first 🎥';
-    movieMeta.innerText = '';
-    return;
-  }
-
-  const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
-  movieTitle.innerText = movie.title;
-  movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
+  status.innerText = 'Check console (F12)';
 });
