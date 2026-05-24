@@ -7,22 +7,39 @@ const app = express();
 app.use(cors());
 
 async function scrapeWatchlist(username) {
+  // Fetch page 1 first to find out total number of pages
+  const firstUrl = `https://letterboxd.com/${username}/watchlist/`;
+  const firstResponse = await axios.get(firstUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    }
+  });
+  const $ = cheerio.load(firstResponse.data);
+
+  // Get total movie count from the page
+  const totalText = $('.js-watchlist-content').attr('data-num-entries') || '0';
+  const total = parseInt(totalText);
+  const totalPages = Math.ceil(total / 28);
+
+  // Build all page URLs
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  // Fetch all pages in parallel
+  const pageResponses = await Promise.all(
+    pageNumbers.map(page =>
+      axios.get(`https://letterboxd.com/${username}/watchlist/page/${page}/`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        }
+      })
+    )
+  );
+
+  // Parse all pages
   const movies = [];
-  let page = 1;
-
-  while (true) {
-    const url = `https://letterboxd.com/${username}/watchlist/page/${page}/`;
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      }
-    });
+  for (const response of pageResponses) {
     const $ = cheerio.load(response.data);
-    const films = $('[data-item-name]');
-
-    if (films.length === 0) break;
-
-    films.each((_, el) => {
+    $('[data-item-name]').each((_, el) => {
       const fullName = $(el).attr('data-item-name');
       const link = $(el).attr('data-item-link');
       const yearMatch = fullName.match(/\((\d{4})\)$/);
@@ -32,6 +49,10 @@ async function scrapeWatchlist(username) {
         movies.push({ title, year, url: 'https://letterboxd.com' + link });
       }
     });
+  }
+
+  return movies;
+}
 
     page++;
     if (page > 100) break; // safety limit — handles up to 1400 movies
