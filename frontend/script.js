@@ -1,5 +1,4 @@
-
-const API_BASE = 'https://watchwheel.onrender.com';
+const PROXY = 'https://corsproxy.io/?';
 
 let watchlist = [];
 
@@ -12,23 +11,45 @@ const movieMeta = document.getElementById('movieMeta');
 
 loadBtn.addEventListener('click', async () => {
   const username = usernameInput.value.trim();
-
   if (!username) return;
 
   status.innerText = 'Loading watchlist...';
+  watchlist = [];
 
   try {
-    const response = await fetch(`${API_BASE}/watchlist/${username}`);
-    const data = await response.json();
+    let page = 1;
+    while (true) {
+      const url = `https://letterboxd.com/${username}/watchlist/page/${page}/`;
+      const res = await fetch(PROXY + encodeURIComponent(url));
+      const html = await res.text();
 
-    watchlist = data.movies || [];
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const films = doc.querySelectorAll('.film-poster');
 
-    if (watchlist.length === 0) {
-      status.innerText = 'No movies found.';
-      return;
+      if (films.length === 0) break;
+
+      films.forEach(film => {
+        const title = film.getAttribute('data-film-name');
+        const year = film.getAttribute('data-film-release-year');
+        const link = film.getAttribute('data-target-link');
+        if (title) {
+          watchlist.push({
+            title,
+            year,
+            url: 'https://letterboxd.com' + link
+          });
+        }
+      });
+
+      page++;
     }
 
-    status.innerText = `Loaded ${watchlist.length} movies`;
+    if (watchlist.length === 0) {
+      status.innerText = 'No movies found. Is the watchlist public?';
+    } else {
+      status.innerText = `Loaded ${watchlist.length} movies`;
+    }
   } catch (err) {
     status.innerText = 'Failed to fetch watchlist';
   }
@@ -42,7 +63,6 @@ pickBtn.addEventListener('click', () => {
   }
 
   const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
-
   movieTitle.innerText = movie.title;
   movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
 });
