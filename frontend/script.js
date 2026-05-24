@@ -57,4 +57,10 @@ loadBtn.addEventListener('click', async () => {
 pickBtn.addEventListener('click', () => {
   if (watchlist.length === 0) {
     movieTitle.innerText = 'Load a watchlist first 🎥';
-    movi
+    movieMeta.innerText = '';
+    return;
+  }
+  const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
+  movieTitle.innerText = movie.title;
+  movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
+});
