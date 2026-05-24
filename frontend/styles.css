@@ -5,8 +5,8 @@
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
-  background: #0f1115;
-  color: white;
+  background: #0E1412;
+  color: #F5F0E8;
   min-height: 100vh;
   display: grid;
   place-items: center;
@@ -19,11 +19,11 @@ body {
 }
 
 .card {
-  background: #171b22;
-  border: 1px solid #2a2f38;
+  background: #1A2320;
+  border: 1px solid #2A3431;
   border-radius: 28px;
   padding: 32px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
 
 h1 {
@@ -32,11 +32,15 @@ h1 {
   display: flex;
   align-items: center;
   gap: 16px;
+  color: #F5F0E8;
+  letter-spacing: -0.5px;
 }
 
 .subtitle {
-  color: #b8b8b8;
+  color: #8A9490;
   margin-bottom: 24px;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
 }
 
 .search-row {
@@ -49,10 +53,20 @@ input {
   flex: 1;
   padding: 16px;
   border-radius: 14px;
-  border: 1px solid #343942;
-  background: #101317;
-  color: white;
+  border: 1px solid #2A3431;
+  background: #0E1412;
+  color: #F5F0E8;
   font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+input::placeholder {
+  color: #4A5450;
+}
+
+input:focus {
+  border-color: #CBB89D;
 }
 
 button {
@@ -61,29 +75,43 @@ button {
   cursor: pointer;
   font-weight: 700;
   transition: 0.2s ease;
+  letter-spacing: 0.02em;
 }
 
 button:hover {
   transform: translateY(-2px);
+  opacity: 0.9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 #loadBtn {
-  background: #2f80ed;
-  color: white;
-  padding: 0 18px;
+  background: #CBB89D;
+  color: #0E1412;
+  padding: 0 22px;
+  font-size: 0.9rem;
 }
 
 .pick-btn {
   width: 100%;
   padding: 18px;
-  background: #00c030;
-  color: #081008;
+  background: #CBB89D;
+  color: #0E1412;
   font-size: 1rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
 }
 
 #status {
   margin-top: 18px;
-  color: #b8b8b8;
+  color: #8A9490;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
 }
 
 .result-card {
@@ -91,27 +119,34 @@ button:hover {
   text-align: center;
   padding: 32px;
   border-radius: 22px;
-  background: #11141a;
+  background: #0E1412;
+  border: 1px solid #2A3431;
 }
 
 .badge {
   display: inline-block;
-  background: #00c030;
-  color: #081008;
-  padding: 8px 14px;
+  background: transparent;
+  color: #CBB89D;
+  border: 1px solid #CBB89D;
+  padding: 6px 14px;
   border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   margin-bottom: 18px;
 }
 
 #movieTitle {
   font-size: 2rem;
   margin-bottom: 10px;
+  color: #F5F0E8;
+  letter-spacing: -0.3px;
 }
 
 #movieMeta {
-  color: #b8b8b8;
+  color: #8A9490;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 640px) {
