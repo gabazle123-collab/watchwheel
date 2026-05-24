@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
@@ -9,36 +8,34 @@ const app = express();
 app.use(cors());
 
 async function scrapeWatchlist(username) {
-  const url = `https://letterboxd.com/${username}/watchlist/`;
+  const rssUrl = `https://letterboxd.com/${username}/watchlist/rss/`;
 
-const response = await axios.get(url, {
-  headers: {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  }
-});
+  const response = await axios.get(rssUrl, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0'
+    }
+  });
 
-  const $ = cheerio.load(response.data);
+  const $ = cheerio.load(response.data, {
+    xmlMode: true
+  });
 
   const movies = [];
 
-$('li.poster-container').each((_, el) => {
-  const film = $(el).find('div[data-film-slug]');
+  $('item').each((_, el) => {
+    const title = $(el).find('title').text();
 
-  const title = film.attr('data-film-name');
-  const year = film.attr('data-film-release-year');
-  const slug = film.attr('data-film-slug');
+    if (title) {
+      movies.push({
+        title,
+        year: '',
+        url: $(el).find('link').text()
+      });
+    }
+  });
 
-  if (title) {
-    movies.push({
-      title,
-      year,
-      url: `https://letterboxd.com/film/${slug}/`
-    });
-  }
-});
-
-  return movies.filter(movie => movie.title);
+  return movies;
 }
 
 app.get('/', (req, res) => {
@@ -51,8 +48,10 @@ app.get('/watchlist/:username', async (req, res) => {
 
     res.json({ movies });
   } catch (error) {
+    console.error(error);
+
     res.status(500).json({
-      error: 'Failed to scrape Letterboxd watchlist'
+      error: 'Failed to fetch watchlist'
     });
   }
 });
