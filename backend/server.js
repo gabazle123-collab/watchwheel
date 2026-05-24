@@ -184,14 +184,23 @@ app.get('/poster', async (req, res) => {
     const $ = cheerio.load(response.data);
     const image = $('meta[property="og:image"]').attr('content') || null;
 
-    // Extract runtime from JSON-LD and cache both poster + runtime
+    // Tagline — Letterboxd puts it in <h4 class="tagline">
+    const tagline = $('h4.tagline').first().text().trim() || null;
+
+    // Extract runtime + synopsis from JSON-LD, then fall back to meta description
     let runtimeMinutes = null;
+    let synopsis       = null;
     const ldJson = $('script[type="application/ld+json"]').first().html();
     if (ldJson) {
       try {
         const ld = JSON.parse(ldJson);
         runtimeMinutes = parseIso8601Duration(ld.duration);
+        if (ld.description) synopsis = ld.description.trim();
       } catch {}
+    }
+    if (!synopsis) {
+      const metaDesc = $('meta[name="description"]').attr('content') || null;
+      if (metaDesc) synopsis = metaDesc.trim();
     }
 
     if (supabase && filmUrl) {
@@ -202,7 +211,7 @@ app.get('/poster', async (req, res) => {
         .catch(() => {});
     }
 
-    res.json({ image, runtime_minutes: runtimeMinutes });
+    res.json({ image, tagline, synopsis, runtime_minutes: runtimeMinutes });
   } catch (e) {
     res.json({ image: null, runtime_minutes: null });
   }

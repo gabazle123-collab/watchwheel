@@ -724,24 +724,62 @@ async function pickFilm(opts = {}) {
   state.currentMovie = movie;
 
   let posterUrl = null;
+  let tagline   = null;
+  let synopsis  = null;
   try {
     const res  = await fetch(`${API_BASE}/poster?url=${encodeURIComponent(movie.url)}`);
     const data = await res.json();
-    posterUrl  = data.image;
+    posterUrl = data.image;
+    tagline   = data.tagline  || null;
+    synopsis  = data.synopsis || null;
   } catch (e) {}
 
   const moodDisplay = state.selectedMoods.size > 0
     ? Array.from(state.selectedMoods)[0]
     : (state.moodText ? 'Your own words' : 'Open');
 
-  $('resultPoster').src      = posterUrl || '';
-  $('resultPoster').alt      = movie.title;
-  $('resultTitle').innerHTML  = italiciseTitle(movie.title);
-  $('resultMeta').innerHTML   = [movie.year, 'Letterboxd'].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  $('resultPoster').src     = posterUrl || '';
+  $('resultPoster').alt     = movie.title;
+  $('resultTitle').innerHTML = italiciseTitle(movie.title);
+  $('resultMeta').innerHTML  = [movie.year, 'Letterboxd'].filter(Boolean).join(' &nbsp;·&nbsp; ');
   $('resultDirector').textContent = '';
-  $('resultQuote').textContent    = pickQuote();
-  $('statMood').textContent  = moodDisplay.charAt(0).toUpperCase() + moodDisplay.slice(1);
-  $('statPace').textContent  = state.runtime
+
+  // Pull-quote: prefer real tagline, then first sentence of synopsis, then fallback
+  let quoteText;
+  if (tagline) {
+    quoteText = `“${tagline}”`;
+  } else if (synopsis) {
+    const firstSentence = (synopsis.match(/[^.!?]+[.!?]+/) || [synopsis])[0].trim();
+    quoteText = `“${firstSentence}”`;
+  } else {
+    quoteText = pickQuote();
+  }
+  $('resultQuote').textContent = quoteText;
+  // When synopsis follows, reduce the pull-quote's bottom margin
+  $('resultQuote').style.marginBottom = synopsis ? '0' : '';
+
+  // Synopsis block
+  const synopsisEl = $('resultSynopsis');
+  if (synopsis) {
+    synopsisEl.hidden = false;
+    if (synopsis.length > 280) {
+      synopsisEl.innerHTML =
+        `<span class="synopsis-text synopsis-clamped">${synopsis}</span>` +
+        `<button class="synopsis-more">Read more</button>`;
+      synopsisEl.querySelector('.synopsis-more').addEventListener('click', function () {
+        synopsisEl.querySelector('.synopsis-text').classList.remove('synopsis-clamped');
+        this.remove();
+      });
+    } else {
+      synopsisEl.innerHTML = `<span class="synopsis-text">${synopsis}</span>`;
+    }
+  } else {
+    synopsisEl.hidden = true;
+    synopsisEl.innerHTML = '';
+  }
+
+  $('statMood').textContent = moodDisplay.charAt(0).toUpperCase() + moodDisplay.slice(1);
+  $('statPace').textContent = state.runtime
     ? RUNTIME_OPTIONS.find(o => o.value === state.runtime).label
     : 'Unhurried';
   $('watchLink').href = movie.url;
