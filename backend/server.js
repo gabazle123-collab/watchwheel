@@ -28,20 +28,21 @@ app.get('/watchlist/:username', async (req, res) => {
 
     const $ = cheerio.load(html);
 
-    const movies = [];
+const movies = [];
 
-    $('div.react-component.poster').each((i, el) => {
-      const data = $(el).attr('data-item-slug');
+const regex = /"filmSlug":"(.*?)".*?"name":"(.*?)"/g;
 
-      if (data) {
-        const title = $(el).attr('data-item-name');
+let match;
 
-        movies.push({
-          title: title || data,
-          url: `https://letterboxd.com/film/${data}/`
-        });
-      }
-    });
+while ((match = regex.exec(html)) !== null) {
+  const slug = match[1];
+  const title = match[2];
+
+  movies.push({
+    title,
+    url: `https://letterboxd.com/film/${slug}/`
+  });
+}
 
     res.json({ movies });
 
