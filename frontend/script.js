@@ -8,6 +8,7 @@ const pickBtn = document.getElementById('pickBtn');
 const status = document.getElementById('status');
 const movieTitle = document.getElementById('movieTitle');
 const movieMeta = document.getElementById('movieMeta');
+const logo = document.querySelector('h1 img');
 
 loadBtn.addEventListener('click', async () => {
   const username = usernameInput.value.trim();
@@ -32,11 +33,21 @@ pickBtn.addEventListener('click', async () => {
     return;
   }
 
+  // Spin the logo
+  logo.classList.add('spinning');
+  pickBtn.disabled = true;
+
+  // Wait 1 second then reveal
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  logo.classList.remove('spinning');
+  pickBtn.disabled = false;
+
   const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
   movieTitle.innerText = movie.title;
   movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
 
-  // Fetch poster from Letterboxd film page
+  // Fetch poster
   const poster = document.getElementById('poster');
   poster.innerHTML = '';
   try {
