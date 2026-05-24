@@ -1,0 +1,50 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WatchWheel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="grain"></div>
+
+  <header class="hero">
+    <h1>🎬 WatchWheel</h1>
+    <p>Paste your Letterboxd watchlist and let fate choose tonight’s movie.</p>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Your Watchlist</h2>
+      <p class="sub">Paste one movie title per line.</p>
+
+      <textarea id="watchlist" placeholder="The Social Network
+Blade Runner 2049
+Whiplash
+Perfect Blue
+La La Land"></textarea>
+
+      <div class="controls">
+        <button id="pickBtn">Pick a Movie</button>
+        <button id="shuffleBtn" class="secondary">Shuffle Again</button>
+      </div>
+    </section>
+
+    <section class="result-card">
+      <div class="ticket">TONIGHT'S PICK</div>
+      <div id="movieResult" class="movie-result">
+        Your movie will appear here...
+      </div>
+      <div id="movieMeta" class="movie-meta"></div>
+    </section>
+  </main>
+
+  <footer>
+    Built for indecisive film lovers 🍿
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
