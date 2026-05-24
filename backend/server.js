@@ -1,68 +1,42 @@
-const PROXY = 'https://corsproxy.io/?';
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
-let watchlist = [];
+const app = express();
+app.use(cors());
 
-const usernameInput = document.getElementById('username');
-const loadBtn = document.getElementById('loadBtn');
-const pickBtn = document.getElementById('pickBtn');
-const status = document.getElementById('status');
-const movieTitle = document.getElementById('movieTitle');
-const movieMeta = document.getElementById('movieMeta');
+async function scrapeWatchlist(username) {
+  const url = `https://letterboxd.com/${username}/watchlist/`;
+  const response = await axios.get(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    }
+  });
+  const $ = cheerio.load(response.data);
+  const movies = [];
+  $('.poster-container').each((_, el) => {
+    const film = $(el).find('.film-poster');
+    movies.push({
+      title: film.attr('data-film-name'),
+      year: film.attr('data-film-release-year'),
+      url: 'https://letterboxd.com' + film.attr('data-target-link')
+    });
+  });
+  return movies.filter(movie => movie.title);
+}
 
-loadBtn.addEventListener('click', async () => {
-  const username = usernameInput.value.trim();
-  if (!username) return;
+app.get('/', (req, res) => res.send('WatchWheel backend running'));
 
-  status.innerText = 'Loading watchlist...';
-  watchlist = [];
-
+app.get('/watchlist/:username', async (req, res) => {
   try {
-    let page = 1;
-    while (true) {
-      const url = `https://letterboxd.com/${username}/watchlist/page/${page}/`;
-      const res = await fetch(PROXY + encodeURIComponent(url));
-      const html = await res.text();
-
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const films = doc.querySelectorAll('.film-poster');
-
-      if (films.length === 0) break;
-
-      films.forEach(film => {
-        const title = film.getAttribute('data-film-name');
-        const year = film.getAttribute('data-film-release-year');
-        const link = film.getAttribute('data-target-link');
-        if (title) {
-          watchlist.push({
-            title,
-            year,
-            url: 'https://letterboxd.com' + link
-          });
-        }
-      });
-
-      page++;
-    }
-
-    if (watchlist.length === 0) {
-      status.innerText = 'No movies found. Is the watchlist public?';
-    } else {
-      status.innerText = `Loaded ${watchlist.length} movies`;
-    }
-  } catch (err) {
-    status.innerText = 'Failed to fetch watchlist';
+    const movies = await scrapeWatchlist(req.params.username);
+    res.json({ movies });
+  } catch (error) {
+    console.error('Scrape error:', error.response?.status, error.message);
+    res.status(500).json({ error: 'Failed to scrape', status: error.response?.status });
   }
 });
 
-pickBtn.addEventListener('click', () => {
-  if (watchlist.length === 0) {
-    movieTitle.innerText = 'Load a watchlist first 🎥';
-    movieMeta.innerText = '';
-    return;
-  }
-
-  const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
-  movieTitle.innerText = movie.title;
-  movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
