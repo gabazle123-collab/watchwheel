@@ -34,7 +34,7 @@ async function scrapeWatchlist(username) {
     });
 
     page++;
-    if (page > 50) break; // safety limit — handles up to 1400 movies
+    if (page > 100) break; // safety limit — handles up to 1400 movies
   }
 
   return movies;
