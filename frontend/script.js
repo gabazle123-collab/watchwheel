@@ -131,7 +131,6 @@ moodTextEl.addEventListener('input', () => {
   state.moodText = moodTextEl.value;
   moodTextEl.classList.toggle('has-content', moodTextEl.value.trim().length > 0);
   chipsBlock.classList.toggle('dim', moodTextEl.value.trim().length > 0);
-  autoGrow(moodTextEl);
 });
 
 document.querySelectorAll('.chip').forEach(chip => {
