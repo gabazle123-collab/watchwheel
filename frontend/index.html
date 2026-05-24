@@ -4,30 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WatchWheel</title>
-  <link rel="icon" type="image/jpeg" href="logo.png">
+  <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <h1 style="display:flex; align-items:center; gap:16px;">
-  <img src="logo.png" alt="Watch Wheel" style="height:120px;">
-  WatchWheel
-</h1>
+      <h1>
+        <img src="logo.png" alt="WatchWheel" style="height:120px;">
+        WatchWheel
+      </h1>
       <p class="subtitle">
-        Enter your Letterboxd username and let fate decide tonight's movie.
+        A film from your watchlist, chosen for tonight.
       </p>
+      <div class="divider"></div>
       <div class="search-row">
-        <input type="text" id="username" placeholder="e.g. savadokic">
-        <button id="loadBtn">Load Watchlist</button>
+        <input type="text" id="username" placeholder="letterboxd username">
+        <button id="loadBtn">Load</button>
       </div>
       <button id="pickBtn" class="pick-btn">
-        Pick For Me
+        Select Tonight's Film
       </button>
       <div id="status"></div>
       <div class="result-card">
-        <div class="badge">TONIGHT'S PICK</div>
-        <h2 id="movieTitle">No movie selected</h2>
+        <div class="badge">Tonight's Screening</div>
+        <h2 id="movieTitle">No film selected</h2>
         <p id="movieMeta"></p>
         <div id="poster"></div>
       </div>
