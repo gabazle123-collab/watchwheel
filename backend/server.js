@@ -59,5 +59,20 @@ app.get('/watchlist/:username', async (req, res) => {
   }
 });
 
+app.get('/poster', async (req, res) => {
+  try {
+    const response = await axios.get(req.query.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      }
+    });
+    const $ = cheerio.load(response.data);
+    const image = $('meta[property="og:image"]').attr('content') || null;
+    res.json({ image });
+  } catch (e) {
+    res.json({ image: null });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
