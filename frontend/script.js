@@ -14,6 +14,8 @@ loadBtn.addEventListener('click', async () => {
   const username = usernameInput.value.trim();
   if (!username) return;
   status.innerText = 'Loading watchlist...';
+  logo.classList.add('spinning');
+  loadBtn.disabled = true;
   try {
     const response = await fetch(`${API_BASE}/watchlist/${username}`);
     const data = await response.json();
@@ -23,6 +25,9 @@ loadBtn.addEventListener('click', async () => {
       : 'No movies found. Is the watchlist public?';
   } catch (err) {
     status.innerText = 'Failed to fetch watchlist';
+  } finally {
+    logo.classList.remove('spinning');
+    loadBtn.disabled = false;
   }
 });
 
@@ -33,11 +38,9 @@ pickBtn.addEventListener('click', async () => {
     return;
   }
 
-  // Spin the logo
   logo.classList.add('spinning');
   pickBtn.disabled = true;
 
-  // Wait 1 second then reveal
   await new Promise(resolve => setTimeout(resolve, 1000));
 
   logo.classList.remove('spinning');
@@ -47,7 +50,6 @@ pickBtn.addEventListener('click', async () => {
   movieTitle.innerText = movie.title;
   movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
 
-  // Fetch poster
   const poster = document.getElementById('poster');
   poster.innerHTML = '';
   try {
