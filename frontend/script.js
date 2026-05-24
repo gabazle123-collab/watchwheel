@@ -25,13 +25,25 @@ loadBtn.addEventListener('click', async () => {
   }
 });
 
-pickBtn.addEventListener('click', () => {
+pickBtn.addEventListener('click', async () => {
   if (watchlist.length === 0) {
     movieTitle.innerText = 'Load a watchlist first 🎥';
     movieMeta.innerText = '';
     return;
   }
+
   const movie = watchlist[Math.floor(Math.random() * watchlist.length)];
   movieTitle.innerText = movie.title;
   movieMeta.innerText = `${movie.year || ''} • ${movie.url}`;
+
+  // Fetch poster from Letterboxd film page
+  const poster = document.getElementById('poster');
+  poster.innerHTML = '';
+  try {
+    const res = await fetch(`${API_BASE}/poster?url=${encodeURIComponent(movie.url)}`);
+    const data = await res.json();
+    if (data.image) {
+      poster.innerHTML = `<img src="${data.image}" style="width:200px; border-radius:12px; margin-top:16px;">`;
+    }
+  } catch (e) {}
 });
