@@ -2,38 +2,179 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0e1620">
   <title>WatchWheel</title>
-  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'%3E%3Ccircle cx='16' cy='16' r='14' stroke='%23ece4d3' stroke-width='1.4'/%3E%3Ccircle cx='16' cy='16' r='2.2' fill='%23ece4d3'/%3E%3Cg fill='%23ece4d3'%3E%3Ccircle cx='16' cy='6.5' r='2'/%3E%3Ccircle cx='16' cy='25.5' r='2'/%3E%3Ccircle cx='6.5' cy='16' r='2'/%3E%3Ccircle cx='25.5' cy='16' r='2'/%3E%3Ccircle cx='9.2' cy='9.2' r='1.7'/%3E%3Ccircle cx='22.8' cy='9.2' r='1.7'/%3E%3Ccircle cx='9.2' cy='22.8' r='1.7'/%3E%3Ccircle cx='22.8' cy='22.8' r='1.7'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1>
-        <img src="logo.png" alt="WatchWheel" style="height:120px;">
-        WatchWheel
-      </h1>
-      <p class="subtitle">
-        A film from your watchlist, chosen for tonight.
-      </p>
-      <div class="divider"></div>
-      <div class="search-row">
-        <input type="text" id="username" placeholder="letterboxd username">
-        <button id="loadBtn">Load</button>
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <main class="container">
+
+    <!-- TOP BAR -->
+    <nav class="topbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" fill="none" aria-label="WatchWheel">
+          <circle cx="16" cy="16" r="14" stroke="#ece4d3" stroke-width="1.4"/>
+          <circle cx="16" cy="16" r="2.2" fill="#ece4d3"/>
+          <g fill="#ece4d3">
+            <circle cx="16" cy="6.5" r="2"/>
+            <circle cx="16" cy="25.5" r="2"/>
+            <circle cx="6.5" cy="16" r="2"/>
+            <circle cx="25.5" cy="16" r="2"/>
+            <circle cx="9.2" cy="9.2" r="1.7"/>
+            <circle cx="22.8" cy="9.2" r="1.7"/>
+            <circle cx="9.2" cy="22.8" r="1.7"/>
+            <circle cx="22.8" cy="22.8" r="1.7"/>
+          </g>
+        </svg>
+        <span class="wordmark">WATCHWHEEL</span>
       </div>
-      <button id="pickBtn" class="pick-btn">
-        Select Tonight's Film
+      <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+          <circle cx="8" cy="3" r="1"/>
+          <circle cx="8" cy="8" r="1"/>
+          <circle cx="8" cy="13" r="1"/>
+        </svg>
       </button>
-      <div id="status"></div>
-      <div class="result-card">
-        <div class="badge">Tonight's Screening</div>
-        <h2 id="movieTitle">No film selected</h2>
-        <p id="movieMeta"></p>
-        <div id="poster"></div>
+    </nav>
+
+    <!-- ONBOARDING (shows if no username) -->
+    <section id="onboarding" class="screen" hidden>
+      <div class="eyebrow"><span class="rule"></span>An introduction</div>
+      <h1 class="headline">A film from your watchlist, chosen for <em>tonight</em>.</h1>
+      <p class="dek">Enter your Letterboxd username. We'll remember it.</p>
+      <div class="input-row">
+        <input type="text" id="usernameInput" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn-primary" id="saveUsernameBtn">Begin</button>
       </div>
+      <p id="onboardStatus" class="status"></p>
+    </section>
+
+    <!-- HOME / PICKER -->
+    <section id="home" class="screen" hidden>
+      <div class="eyebrow"><span class="rule"></span><span id="programmeNo">No. 1</span> · <span id="programmeDay">A programme</span></div>
+      <h1 class="headline">What kind of evening is it, <em>tonight</em>?</h1>
+      <p class="dek">Tell us the mood. We'll find a film worth dimming the lights for.</p>
+
+      <!-- MOOD CHIPS -->
+      <div class="chips" id="moodChips">
+        <button class="chip" data-mood="slow-burn">Slow burn</button>
+        <button class="chip" data-mood="sun-drenched">Sun-drenched</button>
+        <button class="chip" data-mood="noir">Noir</button>
+        <button class="chip" data-mood="melancholy">Melancholy</button>
+        <button class="chip" data-mood="first-date">First date</button>
+        <button class="chip" data-mood="wintry">Wintry</button>
+      </div>
+
+      <!-- DECADE / RUNTIME -->
+      <div class="glass-row">
+        <button class="glass-card" id="decadeCard">
+          <span class="glass-label">Decade</span>
+          <span class="glass-value" id="decadeValue">Any era</span>
+        </button>
+        <button class="glass-card" id="runtimeCard">
+          <span class="glass-label">Runtime</span>
+          <span class="glass-value" id="runtimeValue">Any length</span>
+        </button>
+      </div>
+
+      <p id="homeStatus" class="status"></p>
+
+      <!-- CTA -->
+      <div class="cta-stack">
+        <button class="btn-primary" id="pickBtn">Find tonight's film &nbsp;·&nbsp; ⌁</button>
+        <button class="btn-ghost" id="surpriseBtn">Surprise me entirely</button>
+      </div>
+    </section>
+
+    <!-- TONIGHT'S SCREENING (result) -->
+    <section id="screening" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="backBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M10 3 L5 8 L10 13"/>
+          </svg>
+        </button>
+        <span class="result-title">Tonight's screening</span>
+        <button class="icon-btn" id="favBtn" aria-label="Favourite">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M8 13.5 C8 13.5 2.5 10 2.5 6 C2.5 4 4 2.5 6 2.5 C7 2.5 8 3.2 8 4.2 C8 3.2 9 2.5 10 2.5 C12 2.5 13.5 4 13.5 6 C13.5 10 8 13.5 8 13.5 Z"/>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="poster-wrap">
+        <img id="resultPoster" alt="">
+      </div>
+
+      <div class="metaline" id="resultMeta"></div>
+      <h2 class="film-title" id="resultTitle"></h2>
+      <p class="director" id="resultDirector"></p>
+
+      <div class="pullquote" id="resultQuote"></div>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <span class="stat-label">Mood</span>
+          <span class="stat-value" id="statMood">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Pace</span>
+          <span class="stat-value" id="statPace">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Source</span>
+          <span class="stat-value">Letterboxd</span>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <a class="btn-primary" id="watchLink" href="#" target="_blank" rel="noopener">Where to watch</a>
+        <button class="btn-ghost" id="anotherBtn">Another</button>
+      </div>
+    </section>
+
+    <!-- RECENTLY PROGRAMMED -->
+    <section id="library" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="libBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M10 3 L5 8 L10 13"/>
+          </svg>
+        </button>
+        <span class="result-title">Recently programmed</span>
+        <span style="width:30px;"></span>
+      </nav>
+
+      <div class="eyebrow"><span class="rule"></span>Recently programmed</div>
+      <h1 class="headline" style="font-size:22px;">Your viewing year, <em>so far</em>.</h1>
+
+      <div class="library-list" id="libraryList"></div>
+    </section>
+
+  </main>
+
+  <!-- SETTINGS SHEET -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-handle"></div>
+    <div class="sheet-row" id="sheetLibrary">
+      <span>Recently programmed</span>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#9a907d" stroke-width="1.3"><path d="M6 3 L11 8 L6 13"/></svg>
+    </div>
+    <div class="sheet-row" id="sheetChangeUser">
+      <span>Change username</span>
+      <span class="sheet-meta" id="currentUser"></span>
     </div>
   </div>
+
   <script src="script.js"></script>
 </body>
 </html>
