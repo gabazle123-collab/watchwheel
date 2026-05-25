@@ -209,6 +209,12 @@ app.get('/poster', async (req, res) => {
       image   = $('meta[property="og:image"]').attr('content') || null;
       tagline = $('h4.tagline').first().text().trim() || null;
 
+      // Title for the cache (column is NOT NULL). og:title is "Title (YYYY)".
+      const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+      const titleForCache = ogTitle.replace(/\s*\(\d{4}\)\s*$/, '').trim()
+        || $('h1.primaryname .name').text().trim()
+        || null;
+
       // Runtime + synopsis from JSON-LD
       const ldRaw = $('script[type="application/ld+json"]').first().html();
       if (ldRaw) {
@@ -228,11 +234,18 @@ app.get('/poster', async (req, res) => {
       console.log(`[poster] scraped → image=${!!image} tagline=${JSON.stringify(tagline)} synopsis=${synopsis?.length ?? 0}ch runtime=${runtimeMinutes}`);
 
       if (supabase) {
-        const upsertData = { letterboxd_url: filmUrl, cached_at: new Date().toISOString() };
+        // title column is NOT NULL — always provide one, fall back to URL slug
+        const fallbackTitle = (filmUrl.match(/\/film\/([^/]+)\/?$/)?.[1] || 'unknown')
+          .replace(/-\d{4}$/, '').replace(/-/g, ' ');
+        const upsertData = {
+          letterboxd_url: filmUrl,
+          title:          titleForCache || fallbackTitle,
+          cached_at:      new Date().toISOString(),
+        };
         if (image)          upsertData.poster_url      = image;
         if (runtimeMinutes) upsertData.runtime_minutes = runtimeMinutes;
         supabase.from('film_metadata_cache').upsert(upsertData, { onConflict: 'letterboxd_url' })
-          .catch((err) => console.error('[poster] cache upsert error:', err.message));
+          .then(({ error }) => { if (error) console.error('[poster] cache upsert error:', error.message); });
       }
     }
   } catch (e) {
@@ -251,13 +264,18 @@ app.get('/poster', async (req, res) => {
 // Result cached with trailer_source so future loads skip the waterfall.
 
 // Extract an 11-char YouTube video ID from any of the URL shapes Letterboxd
-// uses (watch?v=, /embed/, youtu.be/). Returns null if nothing matches.
+// uses: watch?v=, /embed/, youtu.be/, youtube-nocookie.com/embed/, with or
+// without a protocol (Letterboxd hrefs are protocol-relative: //youtube.com/...).
+// Returns null for Vimeo / other hosts.
 function extractYouTubeId(url) {
   if (!url) return null;
+  if (!/youtu\.?be/i.test(url)) return null; // skip vimeo and friends fast
   const patterns = [
     /[?&]v=([A-Za-z0-9_-]{11})(?:[&#?]|$)/,
     /\/embed\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,
     /youtu\.be\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,
+    /\/v\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,           // legacy /v/ embed
+    /\/shorts\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,      // YouTube Shorts
   ];
   for (const p of patterns) {
     const m = url.match(p);
@@ -266,14 +284,30 @@ function extractYouTubeId(url) {
   return null;
 }
 
-// Try every attribute on a cheerio element that could carry a trailer URL
+// Try every attribute on a cheerio element that could carry a trailer URL.
+// Handles URL-encoded and JSON-wrapped values that Letterboxd has used at
+// various times.
 function videoIdFromElement($el) {
-  const attrs = ['data-trailer-url', 'data-trailer', 'data-youtube-url', 'data-video-url', 'href', 'src'];
+  const attrs = ['data-trailer-url', 'data-trailer', 'data-youtube-url', 'data-video-url', 'data-youtube-id', 'href', 'src'];
   for (const attr of attrs) {
     let raw = $el.attr(attr);
     if (!raw) continue;
+    // data-youtube-id sometimes holds just the 11-char ID
+    if (attr === 'data-youtube-id' && /^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+    // Decode if it looks URL-encoded
     if (raw.includes('%')) {
       try { raw = decodeURIComponent(raw); } catch {}
+    }
+    // Sometimes the value is JSON like {"url":"//youtube.com/embed/abc"}
+    if (raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        const inner = parsed.url || parsed.src || parsed.href || parsed.youtube_url;
+        if (inner) {
+          const id = extractYouTubeId(inner);
+          if (id) return id;
+        }
+      } catch {}
     }
     const id = extractYouTubeId(raw);
     if (id) return id;
@@ -282,7 +316,8 @@ function videoIdFromElement($el) {
 }
 
 // Tier 1: scrape the Letterboxd film page for an embedded trailer.
-// Returns a YouTube video ID or null.
+// Returns { youtube_id, matched_selector } — selector logged for visibility
+// into which markup form Letterboxd is using on any given day.
 async function scrapeLetterboxdTrailer(filmUrl) {
   if (!filmUrl) return null;
   try {
@@ -298,12 +333,23 @@ async function scrapeLetterboxdTrailer(filmUrl) {
 
     const $ = cheerio.load(response.data);
 
-    // Letterboxd's trailer markup has changed several times — try the most
-    // reliable selectors first, fall through to broader anchor/iframe scans.
+    // Current Letterboxd markup (verified against oppenheimer, dune-part-two,
+    // poor-things, the-smashing-machine):
+    //
+    //   <p class="trailer-link js-watch-panel-trailer">
+    //     <a class="play track-event js-video-zoom"
+    //        data-track-category="Trailer"
+    //        href="//www.youtube.com/embed/VIDEO_ID?rel=0&wmode=transparent">
+    //
+    // Note: data-track-CATEGORY not data-track-ACTION. Older selectors kept
+    // as fallbacks in case Letterboxd reverts or A/B tests change the markup.
     const selectors = [
-      'a.play.track-event[data-track-action="Trailer"]',
-      'a[data-track-action="Play trailer"]',
+      'a[data-track-category="Trailer"]',
+      'p.trailer-link a',
+      '.js-watch-panel-trailer a',
+      'a.js-video-zoom',
       'a[data-track-action="Trailer"]',
+      'a[data-track-action="Play trailer"]',
       '[data-trailer-url]',
       'iframe[src*="youtube.com/embed/"]',
       'iframe[src*="youtube-nocookie.com/embed/"]',
@@ -318,7 +364,10 @@ async function scrapeLetterboxdTrailer(filmUrl) {
         const id = videoIdFromElement($(el));
         if (id) { found = id; return false; }
       });
-      if (found) return found;
+      if (found) {
+        console.log(`[trailer] letterboxd selector matched: "${sel}" → ${found}`);
+        return found;
+      }
     }
     return null;
   } catch (e) {
@@ -326,6 +375,28 @@ async function scrapeLetterboxdTrailer(filmUrl) {
     return null;
   }
 }
+
+// Concurrency limiter — used to throttle YouTube API fan-out so we don't
+// hit the per-minute rate cap when many films fall through to tier 2/3.
+function createLimiter(maxConcurrent) {
+  let active = 0;
+  const queue = [];
+  const drain = () => {
+    while (active < maxConcurrent && queue.length > 0) {
+      const { fn, resolve, reject } = queue.shift();
+      active++;
+      Promise.resolve().then(fn).then(resolve, reject).finally(() => {
+        active--;
+        drain();
+      });
+    }
+  };
+  return (fn) => new Promise((resolve, reject) => {
+    queue.push({ fn, resolve, reject });
+    drain();
+  });
+}
+const limitYouTube = createLimiter(5);
 
 // Tiers 2 & 3: YouTube Data API search with a suffix ("official trailer"/"teaser")
 async function searchYouTubeForFilm(title, year, suffix) {
@@ -414,9 +485,9 @@ async function getTrailerForFilm({ title, year, filmUrl }) {
     }
   }
 
-  // ── Tier 2: YouTube "official trailer" ──
+  // ── Tier 2: YouTube "official trailer" (throttled to 5 concurrent) ──
   if (!videoId) {
-    const r = await searchYouTubeForFilm(title, year, 'official trailer');
+    const r = await limitYouTube(() => searchYouTubeForFilm(title, year, 'official trailer'));
     if (isTransientError(r.error)) return r;
     if (r.youtube_id) {
       videoId = r.youtube_id;
@@ -425,9 +496,9 @@ async function getTrailerForFilm({ title, year, filmUrl }) {
     }
   }
 
-  // ── Tier 3: YouTube "teaser" ──
+  // ── Tier 3: YouTube "teaser" (throttled to 5 concurrent) ──
   if (!videoId) {
-    const r = await searchYouTubeForFilm(title, year, 'teaser');
+    const r = await limitYouTube(() => searchYouTubeForFilm(title, year, 'teaser'));
     if (isTransientError(r.error)) return r;
     if (r.youtube_id) {
       videoId = r.youtube_id;
@@ -441,9 +512,11 @@ async function getTrailerForFilm({ title, year, filmUrl }) {
   }
 
   // ── Cache the definitive result (hit or confirmed-null) ──
+  // film_metadata_cache.title is NOT NULL — always include it in the upsert.
   if (supabase && filmUrl) {
     supabase.from('film_metadata_cache').upsert({
       letterboxd_url:     filmUrl,
+      title:              title || 'Unknown',
       youtube_id:         videoId,
       trailer_source:     source,
       trailer_checked_at: new Date().toISOString(),
