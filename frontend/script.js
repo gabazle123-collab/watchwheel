@@ -38,7 +38,7 @@ const logo = document.querySelector('.logo');
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
   'onboarding', 'wizard',
-  'home', 'screening', 'library', 'account',
+  'home', 'screening', 'library', 'account', 'trailers',
 ];
 
 function show(screenId) {
@@ -843,6 +843,13 @@ function closeSheet() {
 $('settingsBtn').addEventListener('click', openSheet);
 $('sheetBackdrop').addEventListener('click', closeSheet);
 
+$('sheetTrailers').addEventListener('click', () => {
+  closeSheet();
+  setBgWarm(false);
+  show('trailers');
+  renderTrailers();
+});
+
 $('sheetLibrary').addEventListener('click', () => {
   closeSheet();
   renderLibrary();
@@ -897,6 +904,84 @@ function renderLibrary() {
 }
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
+
+// ── Trailers ──────────────────────────────────────────────────────────────────
+
+async function renderTrailers() {
+  const feed   = $('trailerFeed');
+  const status = $('trailerStatus');
+
+  if (!state.watchlist || state.watchlist.length === 0) {
+    feed.innerHTML = '<div class="trailer-empty">No films in your watchlist yet.</div>';
+    status.textContent = '';
+    return;
+  }
+
+  // Pick a randomised subset of up to 20 films so the feed feels fresh each visit
+  const pool = state.watchlist.slice().sort(() => Math.random() - 0.5).slice(0, 20);
+
+  // Skeleton cards render immediately
+  feed.innerHTML = pool.map(m => `
+    <div class="trailer-card" data-film-url="${m.url}">
+      <div class="trailer-video">
+        <div class="trailer-video-placeholder">Loading trailer…</div>
+      </div>
+      <div class="trailer-info">
+        <h3 class="trailer-title">${italiciseTitle(m.title)}</h3>
+        <div class="trailer-meta">${m.year || '—'} · Letterboxd</div>
+        <div class="trailer-actions">
+          <a class="btn-ghost" href="${m.url}" target="_blank" rel="noopener">View on Letterboxd</a>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  status.textContent = 'Finding trailers…';
+  logo.classList.add('spinning');
+
+  try {
+    const res  = await fetch(`${API_BASE}/trailers/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ films: pool }),
+    });
+    const data = await res.json();
+    const trailerMap = new Map((data.trailers || []).map(t => [t.url, t.youtube_id]));
+    const quotaHit   = (data.trailers || []).some(t => t.error === 'quota_exceeded');
+
+    document.querySelectorAll('#trailerFeed .trailer-card').forEach(card => {
+      const url       = card.dataset.filmUrl;
+      const videoId   = trailerMap.get(url);
+      const videoSlot = card.querySelector('.trailer-video');
+
+      if (videoId) {
+        // Lazy embed — only load the YouTube iframe when the user actually taps
+        const placeholder = videoSlot.querySelector('.trailer-video-placeholder');
+        placeholder.textContent = '▶  Watch trailer';
+        placeholder.addEventListener('click', () => {
+          videoSlot.innerHTML =
+            `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0" ` +
+            `allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+        });
+      } else {
+        videoSlot.innerHTML = '<div class="trailer-video-placeholder">No trailer found</div>';
+      }
+    });
+
+    status.textContent = quotaHit
+      ? 'Daily trailer quota reached — try again tomorrow.'
+      : '';
+  } catch (e) {
+    status.textContent = 'Couldn\'t load trailers.';
+  } finally {
+    logo.classList.remove('spinning');
+  }
+}
+
+$('trailersBackBtn').addEventListener('click', () => {
+  show('home');
+  setProgrammeEyebrow();
+});
 
 // ── Auth state listener ───────────────────────────────────────────────────────
 

@@ -131,6 +131,80 @@ The email footer contains a link to `GET /api/unsubscribe?uid=<user_id>` on the 
 
 ---
 
+---
+
+## Trailers discovery
+
+The Trailers screen shows up to 20 randomised films from the user's watchlist with their YouTube trailers embedded inline. Reached from **settings sheet → Explore trailers**.
+
+### End-to-end flow
+
+1. User taps **Explore trailers** in the settings sheet.
+2. `renderTrailers()` picks a random subset of up to 20 films from `state.watchlist`, renders skeleton cards immediately so the screen feels instant.
+3. Frontend POSTs to `/trailers/batch` with `{ films: [{ title, year, url }] }`.
+4. Backend, for each film in parallel:
+   - Looks up `film_metadata_cache.trailer_checked_at` for that `letterboxd_url`. If non-null, returns the cached `youtube_id` (which may be `null` for "checked, no trailer exists").
+   - Otherwise queries the YouTube Data API v3 `search` endpoint with `"<title> <year> official trailer"` and `videoEmbeddable=true`.
+   - Upserts the result (including `null` youtube_id) with a fresh `trailer_checked_at` so future requests skip the API.
+5. Backend returns `{ trailers: [{ url, youtube_id }] }`. Frontend maps youtube_id back onto each card by `data-film-url`.
+6. Card with a youtube_id shows **▶ Watch trailer** — tapping it lazy-loads the YouTube iframe with `autoplay=1`. Cards without one show "No trailer found".
+
+### YouTube API quota
+
+Free tier: **10,000 units/day**. Each `search.list` call costs **100 units** → roughly **100 fresh trailer searches per day** before quota exhausts. The cache means each unique film only ever costs one search; subsequent requests are free.
+
+If the API returns 403 with reason `quotaExceeded` or `dailyLimitExceeded`, the backend returns `{ youtube_id: null, error: 'quota_exceeded' }` and **does not cache** (so we retry tomorrow). The frontend status line shows "Daily trailer quota reached — try again tomorrow."
+
+Network errors and other 4xx/5xx responses are also non-cached so we retry. Only definitive results (a video ID or a confirmed empty result) get persisted.
+
+### Where the cache lives
+
+Single table: `public.film_metadata_cache`, keyed on `letterboxd_url`. Trailer columns:
+
+| Column | Meaning |
+|---|---|
+| `youtube_id` | YouTube video ID, or `null` if confirmed no trailer exists |
+| `trailer_checked_at` | Timestamp of last YouTube search. `null` means "never checked" |
+
+The semantic distinction matters: `youtube_id IS NULL AND trailer_checked_at IS NOT NULL` means "we asked YouTube, there is no trailer" — don't search again. `trailer_checked_at IS NULL` means "we've never asked".
+
+### Invalidating the cache
+
+To force re-search for a specific film:
+
+```sql
+update public.film_metadata_cache
+  set youtube_id = null, trailer_checked_at = null
+  where letterboxd_url = 'https://letterboxd.com/film/whatever/';
+```
+
+To re-search everything (e.g. after a months-long gap when trailers may have been added):
+
+```sql
+update public.film_metadata_cache
+  set trailer_checked_at = null
+  where youtube_id is null;
+```
+
+(This only re-checks films where we previously found nothing — already-cached hits stay cached.)
+
+### Extending the feed
+
+The feed is just a randomised slice of the watchlist. Easy follow-ups:
+
+- **Mood-based picks**: pass the home-screen mood text to `/trailers/batch` and have the backend filter by genre or runtime first.
+- **Decade filter**: reuse the existing `DECADE_OPTIONS` and filter `state.watchlist` before the random slice.
+- **Reels-style swipe**: replace the vertical scroll with a snap-scroll container (`scroll-snap-type: y mandatory` + `scroll-snap-align: start` on each card) and add `IntersectionObserver` to autoplay the visible trailer.
+- **Trailer-only watchlist**: add a new column on `film_metadata_cache` (`trailer_dismissed_by uuid[]`) or a separate `user_trailer_state` table to track per-user "seen / dismissed" state.
+
+### Required environment variables
+
+| Variable | Set on | Purpose |
+|---|---|---|
+| `YOUTUBE_API_KEY` | Render | YouTube Data API v3 key. Never sent to the frontend. |
+
+---
+
 ## Deployment checklist
 
 ### Supabase setup (one-time)

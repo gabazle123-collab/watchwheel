@@ -330,6 +330,27 @@
       </div>
     </section>
 
+    <!-- TRAILERS -->
+    <section id="trailers" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="trailersBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M10 3 L5 8 L10 13"/>
+          </svg>
+        </button>
+        <span class="result-title">Explore trailers</span>
+        <span style="width:30px;"></span>
+      </nav>
+
+      <div class="eyebrow"><span class="rule"></span>From your watchlist</div>
+      <h1 class="headline">A preview of <em>tonight's</em> options.</h1>
+      <p class="dek">Swipe through trailers from films you've saved.</p>
+
+      <div id="trailerFeed" class="trailer-feed"></div>
+
+      <p id="trailerStatus" class="status"></p>
+    </section>
+
     <!-- RECENTLY PROGRAMMED -->
     <section id="library" class="screen" hidden>
       <nav class="result-topbar">
@@ -354,6 +375,10 @@
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
   <div class="sheet" id="sheet" hidden>
     <div class="sheet-handle"></div>
+    <div class="sheet-row" id="sheetTrailers">
+      <span>Explore trailers</span>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#9a907d" stroke-width="1.3"><path d="M6 3 L11 8 L6 13"/></svg>
+    </div>
     <div class="sheet-row" id="sheetLibrary">
       <span>Recently programmed</span>
       <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#9a907d" stroke-width="1.3"><path d="M6 3 L11 8 L6 13"/></svg>

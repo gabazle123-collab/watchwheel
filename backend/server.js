@@ -238,6 +238,120 @@ app.get('/poster', async (req, res) => {
   res.json({ image, tagline, synopsis, runtime_minutes: runtimeMinutes });
 });
 
+// ── YouTube trailers ─────────────────────────────────────────────────────────
+
+async function searchYouTubeTrailer(title, year) {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    console.error('[trailer] YOUTUBE_API_KEY not set');
+    return { youtube_id: null, error: 'no_api_key' };
+  }
+
+  const q = `${title} ${year || ''} official trailer`.trim();
+  const params = new URLSearchParams({
+    part:             'snippet',
+    type:             'video',
+    maxResults:       '1',
+    videoEmbeddable:  'true',
+    q,
+    key:              apiKey,
+  });
+
+  try {
+    const res = await axios.get(`https://www.googleapis.com/youtube/v3/search?${params}`, {
+      validateStatus: () => true,
+      timeout: 10000,
+    });
+
+    if (res.status === 403) {
+      const reason = res.data?.error?.errors?.[0]?.reason;
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') {
+        console.error('[trailer] YouTube quota exceeded');
+        return { youtube_id: null, error: 'quota_exceeded' };
+      }
+      console.error('[trailer] YouTube 403:', JSON.stringify(res.data?.error));
+      return { youtube_id: null, error: 'forbidden' };
+    }
+    if (res.status !== 200) {
+      console.error(`[trailer] YouTube ${res.status}:`, JSON.stringify(res.data).slice(0, 300));
+      return { youtube_id: null, error: 'api_error' };
+    }
+
+    const videoId = res.data?.items?.[0]?.id?.videoId || null;
+    return { youtube_id: videoId };
+  } catch (e) {
+    console.error('[trailer] fetch error:', e.message);
+    return { youtube_id: null, error: 'fetch_error' };
+  }
+}
+
+// Cache-aware single-film trailer lookup
+async function getTrailerForFilm({ title, year, filmUrl }) {
+  // Cache check — trailer_checked_at being set means we already searched
+  if (supabase && filmUrl) {
+    const { data: cached } = await supabase
+      .from('film_metadata_cache')
+      .select('youtube_id, trailer_checked_at')
+      .eq('letterboxd_url', filmUrl)
+      .maybeSingle();
+
+    if (cached?.trailer_checked_at) {
+      return { youtube_id: cached.youtube_id || null, cached: true };
+    }
+  }
+
+  // Cache miss — hit YouTube
+  const result = await searchYouTubeTrailer(title, year);
+
+  // Don't cache transient errors (quota / network) — only definitive results
+  if (result.error === 'quota_exceeded' || result.error === 'fetch_error' || result.error === 'api_error') {
+    return result;
+  }
+
+  if (supabase && filmUrl) {
+    supabase.from('film_metadata_cache').upsert({
+      letterboxd_url:     filmUrl,
+      youtube_id:         result.youtube_id,
+      trailer_checked_at: new Date().toISOString(),
+      cached_at:          new Date().toISOString(),
+    }, { onConflict: 'letterboxd_url' })
+      .then(({ error }) => { if (error) console.error('[trailer] cache upsert error:', error.message); });
+  }
+
+  return result;
+}
+
+// GET /trailer?title=...&year=...&filmUrl=...
+app.get('/trailer', async (req, res) => {
+  const { title, year, filmUrl } = req.query;
+  if (!title) return res.status(400).json({ error: 'title required' });
+
+  const result = await getTrailerForFilm({ title, year, filmUrl });
+  res.json({
+    youtube_id: result.youtube_id,
+    title,
+    year:       year || null,
+    ...(result.error ? { error: result.error } : {}),
+  });
+});
+
+// POST /trailers/batch  body: { films: [{title, year, url}] }
+app.post('/trailers/batch', async (req, res) => {
+  const films = Array.isArray(req.body?.films) ? req.body.films.slice(0, 20) : [];
+  if (films.length === 0) return res.json({ trailers: [] });
+
+  const trailers = await Promise.all(films.map(async (f) => {
+    const r = await getTrailerForFilm({ title: f.title, year: f.year, filmUrl: f.url });
+    return { url: f.url, youtube_id: r.youtube_id, ...(r.error ? { error: r.error } : {}) };
+  }));
+
+  const hits  = trailers.filter(t => t.youtube_id).length;
+  const quota = trailers.some(t => t.error === 'quota_exceeded');
+  console.log(`[trailers/batch] ${films.length} films → ${hits} trailers found${quota ? ' (quota exceeded mid-batch)' : ''}`);
+
+  res.json({ trailers });
+});
+
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
 app.get('/api/unsubscribe', async (req, res) => {
   const { uid } = req.query;
