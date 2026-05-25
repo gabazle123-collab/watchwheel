@@ -425,6 +425,22 @@
       <span>Change username</span>
       <span class="sheet-meta" id="currentUserGuest"></span>
     </div>
+    <div class="sheet-row" id="sheetImportLetterboxd" hidden>
+      <span>Import Letterboxd data</span>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#9a907d" stroke-width="1.3"><path d="M6 3 L11 8 L6 13"/></svg>
+    </div>
+  </div>
+
+  <!-- LETTERBOXD IMPORT OVERLAY -->
+  <div id="importOverlay" class="import-overlay" hidden>
+    <div class="import-card">
+      <div class="import-title">Importing your watchlist…</div>
+      <div class="import-progress-track">
+        <div class="import-progress-bar" id="importProgressBar"></div>
+      </div>
+      <div class="import-status" id="importStatus">Reading export…</div>
+      <button class="import-dismiss" id="importDismiss" hidden>Close</button>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

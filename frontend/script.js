@@ -627,6 +627,21 @@ async function loadUserHistory() {
 }
 
 async function refreshWatchlist() {
+  // Prefer imported films from user_films when the user is signed in — once
+  // they've imported via Letterboxd ZIP, that becomes the source of truth.
+  // Fall back to the Letterboxd scrape for users who haven't imported yet.
+  if (state.session) {
+    try {
+      const res  = await apiFetch('/api/user-films');
+      const data = await res.json();
+      if (data.films?.length) {
+        state.watchlist = data.films;
+        localStorage.setItem('ww_watchlist', JSON.stringify(data.films));
+        localStorage.setItem('ww_watchlist_fetched', Date.now().toString());
+        return;
+      }
+    } catch (e) {}
+  }
   if (!state.username) return;
   try {
     const res  = await fetch(`${API_BASE}/watchlist/${state.username}`);
@@ -840,8 +855,9 @@ $('backBtn').addEventListener('click', () => {
 
 function openSheet() {
   const isSignedIn = !!state.user;
-  $('sheetAccount').hidden    = !isSignedIn;
-  $('sheetChangeUser').hidden = isSignedIn;
+  $('sheetAccount').hidden          = !isSignedIn;
+  $('sheetChangeUser').hidden       = isSignedIn;
+  $('sheetImportLetterboxd').hidden = !isSignedIn; // import only makes sense for signed-in users
   if (isSignedIn) {
     $('currentUser').textContent = state.profile?.letterboxd_username || state.user.email || '';
   } else {
@@ -906,6 +922,121 @@ $('sheetChangeUser').addEventListener('click', () => {
   setBgWarm(false);
   show('onboarding');
 });
+
+// ── Letterboxd import ─────────────────────────────────────────────────────────
+
+$('sheetImportLetterboxd').addEventListener('click', () => {
+  closeSheet();
+  const input = document.createElement('input');
+  input.type    = 'file';
+  input.accept  = '.zip,application/zip';
+  input.onchange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) uploadLetterboxdImport(file);
+  };
+  input.click();
+});
+
+function showImportOverlay() {
+  $('importOverlay').hidden       = false;
+  $('importDismiss').hidden       = true;
+  $('importProgressBar').style.width = '0%';
+  $('importStatus').textContent      = 'Reading export…';
+  document.querySelector('.import-title').textContent = 'Importing your watchlist…';
+}
+
+function hideImportOverlay() {
+  $('importOverlay').hidden = true;
+}
+
+function updateImportProgress(current, total, label) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  $('importProgressBar').style.width = `${pct}%`;
+  if (label) $('importStatus').textContent = label;
+}
+
+function showImportError(msg) {
+  document.querySelector('.import-title').textContent = 'Import failed';
+  $('importStatus').textContent = msg;
+  $('importProgressBar').style.width = '0%';
+  $('importDismiss').hidden = false;
+}
+
+$('importDismiss').addEventListener('click', hideImportOverlay);
+
+async function uploadLetterboxdImport(file) {
+  showImportOverlay();
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = state.session?.access_token;
+
+    const res = await fetch(`${API_BASE}/import/letterboxd`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body:    formData,
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Upload failed (${res.status})`);
+    }
+
+    const { importId, totalCount } = await res.json();
+    updateImportProgress(0, totalCount, `Matching ${totalCount} films to TMDB…`);
+
+    const finalStatus = await pollImport(importId);
+
+    // Refresh the picker's source — user_films now exists for this user
+    await refreshWatchlist();
+
+    updateImportProgress(
+      finalStatus.progress.total,
+      finalStatus.progress.total,
+      `Imported ${finalStatus.imported} of ${finalStatus.progress.total} films.`,
+    );
+    document.querySelector('.import-title').textContent = "That's tonight's library, ready.";
+
+    // Brief pause so the user sees the success message, then navigate home
+    await new Promise(r => setTimeout(r, 1200));
+    hideImportOverlay();
+    show('home');
+    setProgrammeEyebrow();
+  } catch (e) {
+    console.error('[import] failed:', e);
+    showImportError(e.message || 'Something went wrong. Try again.');
+  }
+}
+
+function pollImport(importId) {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res    = await apiFetch(`/import/${importId}/status`);
+        const status = await res.json();
+        if (status.progress) {
+          updateImportProgress(
+            status.progress.current,
+            status.progress.total,
+            status.progress.currentFilm
+              ? `Matched ${status.progress.current}/${status.progress.total} — ${status.progress.currentFilm}`
+              : `Matched ${status.progress.current}/${status.progress.total} films…`,
+          );
+        }
+        if (status.status === 'complete') {
+          clearInterval(interval);
+          resolve(status);
+        } else if (status.status === 'failed') {
+          clearInterval(interval);
+          reject(new Error(status.error || 'Import failed on the server.'));
+        }
+      } catch (e) {
+        // Transient errors — keep polling
+      }
+    }, 700);
+  });
+}
 
 // ── Library ───────────────────────────────────────────────────────────────────
 

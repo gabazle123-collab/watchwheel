@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import multer from 'multer';
+import unzipper from 'unzipper';
+import { parse as parseCsv } from 'csv-parse/sync';
 import supabase from './supabase.js';
 
 const app = express();
@@ -456,6 +459,256 @@ app.post('/trailers/batch', async (req, res) => {
     url, youtube_id, ...(error ? { error } : {}),
   }));
   res.json({ trailers });
+});
+
+// ─── Letterboxd import ───────────────────────────────────────────────────────
+//
+// Flow:
+//   1. POST /import/letterboxd (multipart ZIP)  → parse watchlist.csv, create
+//      an `imports` row, return importId immediately, kick off background
+//      processing (TMDB search + details + videos, upserting `user_films`).
+//   2. GET /import/:importId/status  → frontend polls every ~700ms to drive
+//      the progress overlay until status === 'complete'.
+//   3. GET /api/user-films  → returns the user's films in the shape the
+//      existing picker expects ({ title, year, url, poster, ... }).
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — Letterboxd exports are <5 MB
+});
+
+// Concurrency-limited TMDB fan-out — TMDB allows 50 req/sec but we keep it
+// conservative so a 400-film import doesn't trip rate limits.
+const limitTmdb = createLimiter(5);
+
+async function searchTmdb(title, year) {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) {
+    console.error('[import] TMDB_API_KEY not set');
+    return null;
+  }
+  const params = new URLSearchParams({ query: title, api_key: apiKey });
+  if (year) params.set('primary_release_year', String(year));
+  try {
+    const res = await axios.get(
+      `https://api.themoviedb.org/3/search/movie?${params}`,
+      { validateStatus: () => true, timeout: 10000 },
+    );
+    if (res.status !== 200) return null;
+    return res.data?.results?.[0] || null;
+  } catch (e) {
+    console.error('[import] TMDB search failed:', title, e.message);
+    return null;
+  }
+}
+
+async function fetchTmdbDetails(tmdbId) {
+  const apiKey = process.env.TMDB_API_KEY;
+  // append_to_response=videos folds details + videos into a single request
+  try {
+    const res = await axios.get(
+      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${apiKey}&append_to_response=videos`,
+      { validateStatus: () => true, timeout: 10000 },
+    );
+    if (res.status !== 200) return null;
+    return res.data;
+  } catch (e) {
+    console.error('[import] TMDB details failed:', tmdbId, e.message);
+    return null;
+  }
+}
+
+// Parse Letterboxd's watchlist.csv → [{ title, year, letterboxd_url }, ...]
+// Headers: "Date","Name","Year","Letterboxd URI"
+function parseWatchlistCsv(csvText) {
+  const records = parseCsv(csvText, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    relax_quotes: true,
+    relax_column_count: true,
+  });
+  return records
+    .map(r => ({
+      title:          r['Name'] || r['name'] || '',
+      year:           parseInt(r['Year'] || r['year'] || '', 10) || null,
+      letterboxd_url: r['Letterboxd URI'] || r['letterboxd_uri'] || r['URI'] || '',
+    }))
+    .filter(r => r.title && r.letterboxd_url);
+}
+
+// Background processing — walks the entries, hits TMDB, upserts user_films,
+// updates the imports row's progress counters. Runs async; the HTTP response
+// for /import/letterboxd has already been sent by the time this kicks off.
+async function processImport(userId, importId, entries) {
+  let processed = 0;
+  let matched   = 0;
+  // Throttle progress writes to every 3 films (avoid 400 UPDATEs for a 400-film import).
+  const writeProgress = async (title) => {
+    await supabase.from('imports').update({
+      processed_count:      processed,
+      matched_count:        matched,
+      last_processed_title: title,
+    }).eq('id', importId);
+  };
+
+  await Promise.all(entries.map(entry => limitTmdb(async () => {
+    try {
+      const hit = await searchTmdb(entry.title, entry.year);
+      let row = {
+        user_id:        userId,
+        title:          entry.title,
+        year:           entry.year,
+        letterboxd_url: entry.letterboxd_url,
+        tmdb_id:        null,
+        poster_url:     null,
+        runtime:        null,
+        synopsis:       null,
+        genres:         null,
+        youtube_id:     null,
+        status:         'unmatched',
+      };
+      if (hit?.id) {
+        const details = await fetchTmdbDetails(hit.id);
+        const trailer =
+          details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
+          details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
+          details?.videos?.results?.find(v => v.site === 'YouTube');
+        row = {
+          ...row,
+          tmdb_id:    hit.id,
+          poster_url: details?.poster_path
+            ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
+            : (hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null),
+          runtime:    details?.runtime || null,
+          synopsis:   details?.overview || hit.overview || null,
+          genres:     details?.genres?.map(g => g.name) || null,
+          youtube_id: trailer?.key || null,
+          status:     'ready',
+        };
+        matched++;
+      }
+      const { error } = await supabase
+        .from('user_films')
+        .upsert(row, { onConflict: 'user_id,letterboxd_url' });
+      if (error) console.error('[import] upsert failed:', entry.title, error.message);
+    } catch (e) {
+      console.error('[import] film failed:', entry.title, e.message);
+    } finally {
+      processed++;
+      if (processed % 3 === 0 || processed === entries.length) {
+        await writeProgress(entry.title).catch(() => {});
+      }
+    }
+  })));
+
+  await supabase.from('imports').update({
+    status:          'complete',
+    processed_count: processed,
+    matched_count:   matched,
+  }).eq('id', importId);
+}
+
+// POST /import/letterboxd — accepts a ZIP, kicks off background TMDB matching
+app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  let entries;
+  try {
+    const dir = await unzipper.Open.buffer(req.file.buffer);
+    // watchlist.csv lives at the root of the export, but some users zip it
+    // inside a folder — match either way.
+    const wl = dir.files.find(f =>
+      f.path === 'watchlist.csv' || f.path.endsWith('/watchlist.csv')
+    );
+    if (!wl) return res.status(400).json({ error: 'watchlist.csv not found in ZIP' });
+    const csvBuf = await wl.buffer();
+    entries = parseWatchlistCsv(csvBuf.toString('utf8'));
+  } catch (e) {
+    console.error('[import] zip parse failed:', e.message);
+    return res.status(400).json({ error: 'Invalid Letterboxd export file' });
+  }
+
+  if (entries.length === 0) {
+    return res.status(400).json({ error: 'watchlist.csv is empty' });
+  }
+
+  const { data: importRow, error: importErr } = await supabase
+    .from('imports')
+    .insert({
+      user_id:         req.user.id,
+      status:          'processing',
+      total_count:     entries.length,
+      processed_count: 0,
+      matched_count:   0,
+    })
+    .select()
+    .single();
+
+  if (importErr || !importRow) {
+    console.error('[import] insert imports row failed:', importErr?.message);
+    return res.status(500).json({ error: 'Could not create import record' });
+  }
+
+  // Fire-and-forget — frontend polls /import/:importId/status for progress
+  processImport(req.user.id, importRow.id, entries).catch(async (e) => {
+    console.error('[import] background processing crashed:', e);
+    await supabase.from('imports')
+      .update({ status: 'failed', error_message: e.message || 'unknown' })
+      .eq('id', importRow.id);
+  });
+
+  res.json({ importId: importRow.id, totalCount: entries.length });
+});
+
+// GET /import/:importId/status — polling endpoint for the progress overlay
+app.get('/import/:importId/status', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('imports')
+    .select('*')
+    .eq('id', req.params.importId)
+    .eq('user_id', req.user.id) // belt-and-braces; RLS would also block cross-user reads
+    .single();
+  if (error || !data) return res.status(404).json({ error: 'Import not found' });
+  res.json({
+    status:   data.status,
+    imported: data.matched_count,
+    progress: {
+      current:     data.processed_count,
+      total:       data.total_count,
+      currentFilm: data.last_processed_title,
+    },
+    error: data.error_message || null,
+  });
+});
+
+// GET /api/user-films — returns the user's imported films in the picker shape
+app.get('/api/user-films', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('user_films')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('[user-films] select failed:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  // Shape rows to match the existing state.watchlist contract so the picker
+  // and filters don't need to change. Extras (poster, synopsis, youtube_id…)
+  // ride along for future use.
+  const films = (data || []).map(f => ({
+    title:      f.title,
+    year:       f.year ? String(f.year) : '',
+    url:        f.letterboxd_url,
+    poster:     f.poster_url,
+    tmdb_id:    f.tmdb_id,
+    runtime:    f.runtime,
+    synopsis:   f.synopsis,
+    genres:     f.genres,
+    youtube_id: f.youtube_id,
+    status:     f.status,
+  }));
+  res.json({ films });
 });
 
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
