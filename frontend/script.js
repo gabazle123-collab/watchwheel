@@ -50,7 +50,23 @@ function show(screenId) {
   const authScreens = ['auth-entry', 'auth-signup', 'auth-signin', 'wizard'];
   $('settingsBtn').style.visibility = authScreens.includes(screenId) ? 'hidden' : 'visible';
   closeAllDisclosures();
+  showBottomNav(screenId);
   window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+// ── Bottom nav ────────────────────────────────────────────────────────────────
+
+const NAV_SCREENS = ['home', 'trailers', 'library'];
+
+function showBottomNav(screenId) {
+  const nav = $('bottomNav');
+  if (!nav) return;
+  const visible = NAV_SCREENS.includes(screenId);
+  nav.hidden = !visible;
+  document.body.classList.toggle('nav-visible', visible);
+  nav.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.nav === screenId);
+  });
 }
 
 function setBgWarm(on) { document.body.classList.toggle('warm-bg', on); }
@@ -842,6 +858,27 @@ function closeSheet() {
 
 $('settingsBtn').addEventListener('click', openSheet);
 $('sheetBackdrop').addEventListener('click', closeSheet);
+
+// Bottom-nav item wiring — Account opens the sheet; tapping the active item is a no-op
+document.querySelectorAll('#bottomNav .nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const target = item.dataset.nav;
+    if (target === 'account') { openSheet(); return; }
+    if (item.classList.contains('active')) return; // already here
+    if (target === 'home') {
+      show('home');
+      setProgrammeEyebrow();
+    } else if (target === 'trailers') {
+      setBgWarm(false);
+      renderTrailers();
+      show('trailers');
+    } else if (target === 'library') {
+      setBgWarm(false);
+      renderLibrary();
+      show('library');
+    }
+  });
+});
 
 $('sheetTrailers').addEventListener('click', () => {
   closeSheet();
