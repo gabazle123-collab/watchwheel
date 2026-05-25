@@ -714,7 +714,9 @@ app.get('/import/:importId/status', requireAuth, async (req, res) => {
   });
 });
 
-// GET /api/user-films — returns the user's imported films in the picker shape
+// GET /api/user-films — returns the user's imported films in the picker shape.
+// Response is a bare array (no wrapper) so the frontend can do
+// `state.watchlist = await res.json()` without any extra unwrapping.
 app.get('/api/user-films', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('user_films')
@@ -725,9 +727,9 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
     console.error('[user-films] select failed:', error.message);
     return res.status(500).json({ error: error.message });
   }
-  // Shape rows to match the existing state.watchlist contract so the picker
-  // and filters don't need to change. Extras (poster, synopsis, youtube_id…)
-  // ride along for future use.
+  console.log(`[user-films] ${req.user.id} → ${data?.length || 0} rows`);
+  // Map to the picker's contract; year normalised to a string so the
+  // filterWatchlist() parseInt(m.year) call keeps working.
   const films = (data || []).map(f => ({
     title:      f.title,
     year:       f.year ? String(f.year) : '',
@@ -740,7 +742,7 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
     youtube_id: f.youtube_id,
     status:     f.status,
   }));
-  res.json({ films });
+  res.json(films);
 });
 
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link

@@ -330,10 +330,12 @@ $('signinSubmitBtn').addEventListener('click', async () => {
   } else {
     state.username = state.profile.letterboxd_username;
     localStorage.setItem('ww_username', state.username);
-    // Source of truth is user_films now — fetched by refreshWatchlist()
+    // Pull imported films BEFORE showing home so the picker has data the
+    // moment the screen is visible. Without awaiting, the picker reads an
+    // empty state.watchlist and "no films" briefly flashes.
+    await refreshWatchlist();
     show('home');
     setProgrammeEyebrow();
-    refreshWatchlist();
   }
 });
 
@@ -604,30 +606,39 @@ async function loadUserHistory() {
 
 async function refreshWatchlist() {
   // Signed-in users: source of truth is user_films (populated by the
-  // Letterboxd-export import). No more scraping for signed-in users — if
-  // they haven't imported yet the watchlist stays empty and the
-  // empty-state banner on home surfaces the import flow.
+  // Letterboxd-export import). No scraping. Empty result = empty banner.
   if (state.session) {
     try {
-      const res  = await apiFetch('/api/user-films');
-      const data = await res.json();
-      state.watchlist = data.films || [];
+      const res = await apiFetch('/api/user-films');
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`/api/user-films ${res.status}: ${body.slice(0, 200)}`);
+      }
+      const films = await res.json();
+      state.watchlist = Array.isArray(films) ? films : [];
+      console.log('[watchlist] loaded', state.watchlist.length, 'films from user_films');
       updateEmptyState();
       return;
     } catch (e) {
-      // Network glitch — leave state.watchlist as-is, banner reflects current state
+      console.error('[watchlist] /api/user-films failed:', e);
+      // Leave state.watchlist as-is so we don't blank out a populated picker
+      // on a transient network blip. Banner re-evaluates either way.
       updateEmptyState();
       return;
     }
   }
-  // Guest path: still scrape (the spec keeps /watchlist/:username and the
-  // guest onboarding flow intact for now).
+  // Guest path: still scrape (spec keeps /watchlist/:username for now).
   if (!state.username) return;
   try {
     const res  = await fetch(`${API_BASE}/watchlist/${state.username}`);
     const data = await res.json();
-    if (data.movies?.length) state.watchlist = data.movies;
-  } catch (e) {}
+    if (data.movies?.length) {
+      state.watchlist = data.movies;
+      console.log('[watchlist] scraped', state.watchlist.length, 'films for', state.username);
+    }
+  } catch (e) {
+    console.error('[watchlist] scrape failed:', e);
+  }
 }
 
 function updateEmptyState() {
@@ -1369,12 +1380,12 @@ async function boot() {
     }
 
     // Source of truth is user_films — fetched by refreshWatchlist() below.
-    // The empty-state banner on home covers the brief gap before the fetch
-    // completes (and stays if the user has no imported films yet).
+    // Await before show('home') so the picker has its data on first paint;
+    // empty-state banner covers users who skipped import.
     await loadUserHistory();
+    await refreshWatchlist();
     show('home');
     setProgrammeEyebrow();
-    refreshWatchlist();
 
   } else {
     // ── Guest / new visitor ──
