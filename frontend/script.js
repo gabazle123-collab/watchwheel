@@ -25,7 +25,6 @@ const state = {
   currentMovie:  null,
   // wizard
   wizUsername:    '',
-  wizWatchlist:   [],
   wizDigestOptIn: true,
   wizDigestHour:  18,
 };
@@ -331,8 +330,7 @@ $('signinSubmitBtn').addEventListener('click', async () => {
   } else {
     state.username = state.profile.letterboxd_username;
     localStorage.setItem('ww_username', state.username);
-    const cached = localStorage.getItem('ww_watchlist');
-    if (cached) state.watchlist = JSON.parse(cached);
+    // Source of truth is user_films now — fetched by refreshWatchlist()
     show('home');
     setProgrammeEyebrow();
     refreshWatchlist();
@@ -354,13 +352,10 @@ $('forgotPasswordBtn').addEventListener('click', async () => {
 
 function enterWizard() {
   state.wizUsername    = '';
-  state.wizWatchlist   = [];
   state.wizDigestOptIn = true;
   state.wizDigestHour  = 18;
   $('wizUsername').value             = '';
   $('wizUsernameStatus').textContent = '';
-  $('wizPreview').hidden             = true;
-  $('wz1NextBtn').hidden             = true;
   $('digestToggle').classList.add('active');
   $('toggleCheck').classList.add('checked');
   showWizardStep(1);
@@ -369,7 +364,10 @@ function enterWizard() {
 
 function showWizardStep(n) {
   [1, 2, 3].forEach(i => { $(`wz${i}`).hidden = (i !== n); });
-  $('wizardStepLabel').textContent          = `Step ${n} of 3`;
+  // Step 1 = Import (conceptually step 3 of 4); steps 2 + 3 are both the
+  // digest "step 4 of 4" — toggle then time-picker on separate screens.
+  const label = n === 1 ? 'Step 3 of 4' : 'Step 4 of 4';
+  $('wizardStepLabel').textContent          = label;
   $('wizardBackBtn').style.visibility       = n === 1 ? 'hidden' : 'visible';
   if (n === 3) renderTimeOptions('timeOptions', state.wizDigestHour, h => { state.wizDigestHour = h; });
 }
@@ -379,55 +377,24 @@ $('wizardBackBtn').addEventListener('click', () => {
   if (cur > 1) showWizardStep(cur - 1);
 });
 
-// Step 1 — username + live preview
-$('wizPreviewBtn').addEventListener('click', async () => {
-  const username = $('wizUsername').value.trim();
-  const statusEl = $('wizUsernameStatus');
-  if (!username) { statusEl.textContent = 'Enter a Letterboxd username.'; return; }
-
-  statusEl.textContent = 'Loading your watchlist…';
-  logo.classList.add('spinning');
-  $('wizPreviewBtn').disabled = true;
-  $('wizPreview').hidden      = true;
-  $('wz1NextBtn').hidden      = true;
-
-  try {
-    const res  = await fetch(`${API_BASE}/watchlist/${username}`);
-    const data = await res.json();
-    logo.classList.remove('spinning');
-    $('wizPreviewBtn').disabled = false;
-
-    if (!data.movies || data.movies.length === 0) {
-      statusEl.textContent = 'No films found — is this watchlist public?'; return;
-    }
-
-    state.wizUsername  = username;
-    state.wizWatchlist = data.movies;
-    statusEl.textContent = '';
-
-    const six = data.movies.slice(0, 6);
-    $('wizPreview').innerHTML = `
-      <div class="eyebrow eyebrow-sm" style="margin-bottom:10px;">
-        <span class="rule"></span>${data.movies.length} films found
-      </div>
-      <div class="wiz-preview-grid">
-        ${six.map(m => `
-          <div class="wiz-preview-item">
-            <div>${m.title}</div>
-            <div class="wiz-film-year">${m.year || '—'}</div>
-          </div>`).join('')}
-      </div>`;
-    $('wizPreview').hidden = false;
-    $('wz1NextBtn').hidden = false;
-
-  } catch (e) {
-    logo.classList.remove('spinning');
-    $('wizPreviewBtn').disabled = false;
-    statusEl.textContent = 'Couldn\'t reach Letterboxd. Try again?';
-  }
+// Step 3 — Import Letterboxd export ZIP (or skip)
+$('wizImportBtn').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type    = 'file';
+  input.accept  = '.zip,application/zip';
+  input.onchange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) uploadLetterboxdImport(file, { advanceToWizardStep: 2 });
+  };
+  input.click();
 });
 
-$('wz1NextBtn').addEventListener('click', () => showWizardStep(2));
+$('wizImportSkip').addEventListener('click', () => {
+  // Capture optional username if the user typed one — it's stored on profile
+  // at the end of the wizard (Step 4). No scraping.
+  state.wizUsername = $('wizUsername').value.trim();
+  showWizardStep(2);
+});
 
 // Step 2 — digest toggle
 $('digestToggle').addEventListener('click', () => {
@@ -443,22 +410,30 @@ $('wz3DoneBtn').addEventListener('click', async () => {
   $('wz3DoneBtn').disabled = true;
   logo.classList.add('spinning');
 
-  state.username  = state.wizUsername;
-  state.watchlist = state.wizWatchlist;
-  localStorage.setItem('ww_username',  state.username);
-  localStorage.setItem('ww_watchlist', JSON.stringify(state.watchlist));
-  localStorage.setItem('ww_watchlist_fetched', Date.now().toString());
+  // Capture the optional typed username (display-only) from the import step.
+  // If the user uploaded an export, processImport() will have already set
+  // letterboxd_username from profile.csv — we only override here when the
+  // user typed one explicitly.
+  const typedUsername = ($('wizUsername').value || '').trim();
+  if (typedUsername) {
+    state.username = typedUsername;
+    localStorage.setItem('ww_username', typedUsername);
+  }
+
+  const profileUpdate = {
+    digest_opt_in: state.wizDigestOptIn,
+    digest_hour:   state.wizDigestHour,
+  };
+  if (typedUsername) profileUpdate.letterboxd_username = typedUsername;
 
   try {
     await apiFetch('/api/profile', {
       method: 'PATCH',
-      body: JSON.stringify({
-        letterboxd_username: state.username,
-        digest_opt_in:       state.wizDigestOptIn,
-        digest_hour:         state.wizDigestHour,
-      }),
+      body:   JSON.stringify(profileUpdate),
     });
     await loadUserProfile();
+    // Pull whatever the user just imported (no-op if they skipped)
+    await refreshWatchlist();
   } catch (e) {}
 
   logo.classList.remove('spinning');
@@ -466,6 +441,7 @@ $('wz3DoneBtn').addEventListener('click', async () => {
   setBgWarm(false);
   show('home');
   setProgrammeEyebrow();
+  updateEmptyState();
 });
 
 // ── Account screen ────────────────────────────────────────────────────────────
@@ -528,7 +504,7 @@ $('saveNewUsernameBtn').addEventListener('click', async () => {
       state.username  = username;
       state.watchlist = data.movies;
       localStorage.setItem('ww_username',  username);
-      localStorage.setItem('ww_watchlist', JSON.stringify(data.movies));
+      // No more ww_watchlist cache — refreshWatchlist() reads from user_films
       await loadUserProfile();
       $('accountUsername').textContent = username;
       $('changeUsernameForm').hidden   = true;
@@ -627,31 +603,40 @@ async function loadUserHistory() {
 }
 
 async function refreshWatchlist() {
-  // Prefer imported films from user_films when the user is signed in — once
-  // they've imported via Letterboxd ZIP, that becomes the source of truth.
-  // Fall back to the Letterboxd scrape for users who haven't imported yet.
+  // Signed-in users: source of truth is user_films (populated by the
+  // Letterboxd-export import). No more scraping for signed-in users — if
+  // they haven't imported yet the watchlist stays empty and the
+  // empty-state banner on home surfaces the import flow.
   if (state.session) {
     try {
       const res  = await apiFetch('/api/user-films');
       const data = await res.json();
-      if (data.films?.length) {
-        state.watchlist = data.films;
-        localStorage.setItem('ww_watchlist', JSON.stringify(data.films));
-        localStorage.setItem('ww_watchlist_fetched', Date.now().toString());
-        return;
-      }
-    } catch (e) {}
+      state.watchlist = data.films || [];
+      updateEmptyState();
+      return;
+    } catch (e) {
+      // Network glitch — leave state.watchlist as-is, banner reflects current state
+      updateEmptyState();
+      return;
+    }
   }
+  // Guest path: still scrape (the spec keeps /watchlist/:username and the
+  // guest onboarding flow intact for now).
   if (!state.username) return;
   try {
     const res  = await fetch(`${API_BASE}/watchlist/${state.username}`);
     const data = await res.json();
-    if (data.movies?.length) {
-      state.watchlist = data.movies;
-      localStorage.setItem('ww_watchlist', JSON.stringify(data.movies));
-      localStorage.setItem('ww_watchlist_fetched', Date.now().toString());
-    }
+    if (data.movies?.length) state.watchlist = data.movies;
   } catch (e) {}
+}
+
+function updateEmptyState() {
+  const banner = $('emptyImportBanner');
+  if (!banner) return;
+  // Only show for signed-in users with zero imported films — guests don't
+  // have a user_films table, so the banner doesn't apply to them.
+  const shouldShow = !!state.session && (!state.watchlist || state.watchlist.length === 0);
+  banner.hidden = !shouldShow;
 }
 
 // ── Guest prompt ──────────────────────────────────────────────────────────────
@@ -925,21 +910,30 @@ $('sheetChangeUser').addEventListener('click', () => {
 
 // ── Letterboxd import ─────────────────────────────────────────────────────────
 
-$('sheetImportLetterboxd').addEventListener('click', () => {
-  closeSheet();
+function openLetterboxdFilePicker(opts = {}) {
   const input = document.createElement('input');
   input.type    = 'file';
   input.accept  = '.zip,application/zip';
   input.onchange = (e) => {
     const file = e.target.files?.[0];
-    if (file) uploadLetterboxdImport(file);
+    if (file) uploadLetterboxdImport(file, opts);
   };
   input.click();
+}
+
+$('sheetImportLetterboxd').addEventListener('click', () => {
+  closeSheet();
+  openLetterboxdFilePicker();
 });
 
+// Empty-watchlist banner on home — same file picker as Settings → Import
+$('emptyImportBtn').addEventListener('click', () => openLetterboxdFilePicker());
+
 function showImportOverlay() {
-  $('importOverlay').hidden       = false;
-  $('importDismiss').hidden       = true;
+  $('importOverlay').hidden          = false;
+  $('importDismiss').hidden          = true;
+  $('importDismiss').textContent     = 'Close';
+  $('importDismiss').onclick         = hideImportOverlay;
   $('importProgressBar').style.width = '0%';
   $('importStatus').textContent      = 'Reading export…';
   document.querySelector('.import-title').textContent = 'Importing your watchlist…';
@@ -959,12 +953,14 @@ function showImportError(msg) {
   document.querySelector('.import-title').textContent = 'Import failed';
   $('importStatus').textContent = msg;
   $('importProgressBar').style.width = '0%';
-  $('importDismiss').hidden = false;
+  $('importDismiss').textContent = 'Close';
+  $('importDismiss').onclick     = hideImportOverlay;
+  $('importDismiss').hidden      = false;
 }
 
-$('importDismiss').addEventListener('click', hideImportOverlay);
-
-async function uploadLetterboxdImport(file) {
+// opts.advanceToWizardStep — when set (e.g. from the wizard import step),
+// shows a "Continue →" button on success instead of auto-navigating home.
+async function uploadLetterboxdImport(file, opts = {}) {
   showImportOverlay();
 
   try {
@@ -990,19 +986,33 @@ async function uploadLetterboxdImport(file) {
 
     // Refresh the picker's source — user_films now exists for this user
     await refreshWatchlist();
+    // The export's profile.csv may have set letterboxd_username; pull it.
+    await loadUserProfile().catch(() => {});
 
     updateImportProgress(
       finalStatus.progress.total,
       finalStatus.progress.total,
       `Imported ${finalStatus.imported} of ${finalStatus.progress.total} films.`,
     );
-    document.querySelector('.import-title').textContent = "That's tonight's library, ready.";
 
-    // Brief pause so the user sees the success message, then navigate home
-    await new Promise(r => setTimeout(r, 1200));
-    hideImportOverlay();
-    show('home');
-    setProgrammeEyebrow();
+    if (opts.advanceToWizardStep) {
+      // Wizard mode: stay on overlay until user clicks Continue
+      document.querySelector('.import-title').textContent = "You're ready.";
+      $('importDismiss').textContent = 'Continue →';
+      $('importDismiss').onclick     = () => {
+        hideImportOverlay();
+        showWizardStep(opts.advanceToWizardStep);
+      };
+      $('importDismiss').hidden = false;
+    } else {
+      // Settings-sheet path: brief success animation, then navigate home
+      document.querySelector('.import-title').textContent = "That's tonight's library, ready.";
+      await new Promise(r => setTimeout(r, 1200));
+      hideImportOverlay();
+      show('home');
+      setProgrammeEyebrow();
+      updateEmptyState();
+    }
   } catch (e) {
     console.error('[import] failed:', e);
     showImportError(e.message || 'Something went wrong. Try again.');
@@ -1358,14 +1368,13 @@ async function boot() {
       enterWizard(); return;
     }
 
-    // Serve home instantly from cache, hydrate in background
-    const cached = localStorage.getItem('ww_watchlist');
-    if (cached) state.watchlist = JSON.parse(cached);
-
+    // Source of truth is user_films — fetched by refreshWatchlist() below.
+    // The empty-state banner on home covers the brief gap before the fetch
+    // completes (and stays if the user has no imported films yet).
     await loadUserHistory();
     show('home');
     setProgrammeEyebrow();
-    refreshWatchlist(); // background — updates cache silently
+    refreshWatchlist();
 
   } else {
     // ── Guest / new visitor ──

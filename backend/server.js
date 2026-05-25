@@ -614,6 +614,7 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   let entries;
+  let extractedUsername = null;
   try {
     const dir = await unzipper.Open.buffer(req.file.buffer);
     // watchlist.csv lives at the root of the export, but some users zip it
@@ -624,6 +625,26 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
     if (!wl) return res.status(400).json({ error: 'watchlist.csv not found in ZIP' });
     const csvBuf = await wl.buffer();
     entries = parseWatchlistCsv(csvBuf.toString('utf8'));
+
+    // Letterboxd exports also include profile.csv with the user's username.
+    // Pull it so we can populate profiles.letterboxd_username without the
+    // user having to type it in.
+    const profileEntry = dir.files.find(f =>
+      f.path === 'profile.csv' || f.path.endsWith('/profile.csv')
+    );
+    if (profileEntry) {
+      try {
+        const profileBuf = await profileEntry.buffer();
+        const profileRows = parseCsv(profileBuf.toString('utf8'), {
+          columns: true, skip_empty_lines: true, trim: true, relax_quotes: true,
+          relax_column_count: true,
+        });
+        extractedUsername =
+          profileRows[0]?.Username || profileRows[0]?.username || null;
+      } catch (e) {
+        console.error('[import] profile.csv parse failed:', e.message);
+      }
+    }
   } catch (e) {
     console.error('[import] zip parse failed:', e.message);
     return res.status(400).json({ error: 'Invalid Letterboxd export file' });
@@ -631,6 +652,17 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
 
   if (entries.length === 0) {
     return res.status(400).json({ error: 'watchlist.csv is empty' });
+  }
+
+  // Update the Letterboxd username on the user's profile if the export
+  // included one (cosmetic — used for display in account / sheet only).
+  if (extractedUsername) {
+    await supabase.from('profiles')
+      .update({ letterboxd_username: extractedUsername })
+      .eq('id', req.user.id)
+      .then(({ error }) => {
+        if (error) console.error('[import] profile username update failed:', error.message);
+      });
   }
 
   const { data: importRow, error: importErr } = await supabase

@@ -63,6 +63,12 @@
       <h1 class="headline">What kind of evening is it, <em>tonight</em>?</h1>
       <p class="dek">Tell us the mood. We'll find a film worth dimming the lights for.</p>
 
+      <!-- Empty-state banner: shown only when the signed-in user has 0 imported films -->
+      <div id="emptyImportBanner" class="empty-import-banner" hidden>
+        <p class="empty-import-text">Your watchlist is empty.</p>
+        <button class="empty-import-btn" id="emptyImportBtn">Import Letterboxd data →</button>
+      </div>
+
       <!-- MOOD: FREE TEXT -->
       <div class="mood-section">
         <div class="eyebrow eyebrow-sm"><span class="rule"></span>Tonight feels like…</div>
@@ -234,18 +240,29 @@
         <span style="width:30px;"></span>
       </nav>
 
-      <!-- Step 1: Letterboxd username + live preview -->
+      <!-- Step 3 of 4: Import Letterboxd export -->
       <div id="wz1" class="wizard-step">
         <div class="eyebrow"><span class="rule"></span>Your library</div>
-        <h1 class="headline">Where is your <em>watchlist</em>?</h1>
-        <p class="dek">Enter your Letterboxd username. We'll confirm your watchlist is reachable.</p>
-        <div class="input-row">
-          <input type="text" id="wizUsername" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
-          <button class="btn-primary" id="wizPreviewBtn" style="white-space:nowrap; min-width:84px;">Preview</button>
+        <h1 class="headline">Import your <em>watchlist</em>.</h1>
+        <p class="dek">Upload your Letterboxd export to get started. WatchWheel never scrapes your data — everything stays private.</p>
+
+        <div class="wiz-import-hint">
+          <span class="wiz-import-hint-label">How to export</span>
+          <span class="wiz-import-hint-body">Letterboxd → Settings → Data → Export your data</span>
         </div>
+
+        <button class="btn-primary" id="wizImportBtn" style="margin-top:18px;">Upload export ZIP</button>
+
+        <div class="wiz-username-row">
+          <input type="text" id="wizUsername" class="wiz-username-input"
+                 placeholder="Letterboxd username (optional — for display only)"
+                 autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+
         <p id="wizUsernameStatus" class="status"></p>
-        <div id="wizPreview" class="wiz-preview" hidden></div>
-        <button class="btn-primary" id="wz1NextBtn" style="margin-top:22px;" hidden>This is my list →</button>
+
+        <div class="wiz-skip-divider"></div>
+        <button class="wiz-skip-link" id="wizImportSkip">Skip for now — I'll import later</button>
       </div>
 
       <!-- Step 2: Digest opt-in -->
