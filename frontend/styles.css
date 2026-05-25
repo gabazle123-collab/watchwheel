@@ -440,75 +440,206 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 .library-empty             { font-family: var(--font-serif); font-style: italic; color: var(--ww-taupe); font-size: 13px; text-align: center; padding: 40px 0; }
 
 /* ── Trailers ──────────────────────────────────────────────────────────── */
-.trailer-feed {
-  display: flex; flex-direction: column;
-  gap: 24px; margin-top: 18px;
-}
 
-.trailer-card {
-  background: var(--ww-surface);
-  border: 1px solid var(--ww-border);
-  border-radius: 14px;
+/* Escape the 380-px container — full-screen fixed overlay */
+#trailers:not([hidden]) {
+  position: fixed; inset: 0;
+  z-index: 50;
+  background: var(--ww-bg-deep);
   overflow: hidden;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: none;
+  padding: 0;
+  display: block;
 }
 
-.trailer-video {
-  width: 100%; aspect-ratio: 16/9;
-  background: rgba(21,25,31,0.6);
+/* Floating header with top gradient */
+.trailer-header {
+  position: absolute; top: 0; left: 0; right: 0;
+  z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top, 12px));
+  background: linear-gradient(to bottom, rgba(10,15,20,0.78) 0%, transparent 100%);
+  pointer-events: none;
+}
+.trailer-header > * { pointer-events: auto; }
+
+/* Snap-scroll feed */
+.trailer-feed {
+  position: absolute; inset: 0;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.trailer-feed::-webkit-scrollbar { display: none; }
+
+/* Individual film card — full viewport height */
+.trailer-card {
   position: relative;
-}
-.trailer-video iframe {
-  width: 100%; height: 100%; border: none; display: block;
+  width: 100%; height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow: hidden;
+  background: var(--ww-bg-deep);
 }
 
-.trailer-video-placeholder {
-  width: 100%; height: 100%;
+/* Blurred poster backdrop (dark fallback / while iframe loads) */
+.trailer-poster-bg {
+  position: absolute; inset: 0;
+  background: var(--ww-bg-mid);
+  background-size: cover; background-position: center;
+}
+
+/* 16:9 iframe centred + cover-cropped to fill portrait viewport */
+.trailer-video-wrap {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.trailer-video-wrap iframe {
+  width: 177.78vh; /* 16/9 × 100 */
+  height: 100dvh;
+  min-width: 100%;
+  border: none;
+  pointer-events: none; /* controls=0; parent handles taps */
+}
+
+/* Mute toggle — top-right, below the back button */
+.trailer-mute-btn {
+  position: absolute; top: 62px; right: 14px;
+  z-index: 10;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(10,15,20,0.55);
+  border: 1px solid rgba(232,223,213,0.14);
+  color: var(--ww-cream-dim);
   display: grid; place-items: center;
-  color: var(--ww-taupe);
-  font-family: var(--font-serif); font-style: italic; font-size: 13px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.2s ease;
-  text-align: center;
-  padding: 0 16px;
+  transition: background 0.15s;
 }
-.trailer-video-placeholder:hover { color: var(--ww-cream-dim); }
+.trailer-mute-btn:active { background: rgba(168,132,92,0.3); }
+.trailer-mute-btn svg { pointer-events: none; }
 
-.trailer-info  { padding: 14px 16px 16px 16px; }
+/* Bottom info overlay */
+.trailer-info-overlay {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  z-index: 5;
+  padding: 60px 18px 24px;
+  padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px)));
+  background: linear-gradient(to top,
+    rgba(10,15,20,0.92) 0%,
+    rgba(10,15,20,0.48) 50%,
+    transparent 100%);
+}
 
-.trailer-title {
+.trailer-card-title {
   font-family: var(--font-serif);
-  font-size: 17px; font-weight: 400;
-  color: var(--ww-cream);
-  margin-bottom: 4px;
-  line-height: 1.2;
+  font-size: 20px; font-weight: 400;
+  color: var(--ww-cream); line-height: 1.2;
+  margin-bottom: 3px;
 }
-.trailer-title em { font-style: italic; color: var(--ww-amber-bright); }
+.trailer-card-title em { font-style: italic; color: var(--ww-amber-bright); }
 
-.trailer-meta {
+.trailer-card-meta {
   font-family: var(--font-sans);
   font-size: 10px; letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ww-taupe-dim);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
-.trailer-actions { display: flex; gap: 8px; margin-top: 10px; }
-.trailer-actions .btn-ghost {
-  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 8px 12px; min-height: 32px;
+.trailer-card-actions { display: flex; gap: 8px; align-items: center; }
+
+.trailer-lbx-link {
+  font-family: var(--font-sans);
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ww-taupe);
+  border: 1px solid rgba(232,223,213,0.14);
+  padding: 7px 14px; border-radius: 20px;
   text-decoration: none;
-  display: inline-flex; align-items: center;
+  transition: color 0.2s, border-color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.trailer-lbx-link:hover { color: var(--ww-cream-dim); border-color: rgba(232,223,213,0.28); }
+
+/* "No trailer" annotation in meta line */
+.trailer-card.trailer-no-video .trailer-card-meta::after {
+  content: ' · no trailer';
+  opacity: 0.55;
 }
 
-.trailer-empty {
-  font-family: var(--font-serif); font-style: italic;
-  color: var(--ww-taupe); font-size: 13px;
-  text-align: center; padding: 40px 0;
+/* Skeleton shimmer */
+.trailer-skeleton .trailer-card-title,
+.trailer-skeleton .trailer-card-meta {
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  color: transparent;
+  pointer-events: none;
 }
+.trailer-skeleton .trailer-lbx-link { opacity: 0.25; pointer-events: none; }
+.trailer-skeleton .trailer-mute-btn { opacity: 0;    pointer-events: none; }
+
+/* End-of-feed card */
+.trailer-end-card {
+  position: relative;
+  width: 100%; height: 100dvh;
+  scroll-snap-align: start; scroll-snap-stop: always;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px;
+  background: var(--ww-bg-deep);
+  text-align: center;
+  padding: 40px;
+}
+
+.trailer-end-title {
+  font-family: var(--font-serif);
+  font-size: 24px; font-weight: 400;
+  color: var(--ww-cream); line-height: 1.3;
+}
+.trailer-end-title em { font-style: italic; color: var(--ww-amber-bright); }
+
+.trailer-end-sub {
+  font-family: var(--font-sans);
+  font-size: 12px; letter-spacing: 0.06em;
+  color: var(--ww-taupe); max-width: 240px; line-height: 1.65;
+}
+
+/* Progress dots — right edge, vertically centred */
+.trailer-dots {
+  position: absolute; right: 10px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex; flex-direction: column; gap: 5px;
+  pointer-events: none;
+}
+
+.trailer-dot {
+  width: 4px; height: 4px; border-radius: 2px;
+  background: rgba(138,130,117,0.4);
+  align-self: center;
+  transition: background 0.25s, height 0.25s;
+}
+.trailer-dot.active {
+  background: var(--ww-amber);
+  height: 14px;
+}
+
+/* Status / quota line */
+.trailer-status-line {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom, 18px));
+  left: 50%; transform: translateX(-50%);
+  z-index: 30;
+  font-family: var(--font-sans);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ww-taupe);
+  background: rgba(10,15,20,0.72);
+  padding: 6px 14px; border-radius: 20px;
+  white-space: nowrap; pointer-events: none;
+  transition: opacity 0.3s;
+}
+.trailer-status-line:empty { opacity: 0; }
 
 /* ── Settings sheet ────────────────────────────────────────────────────── */
 .sheet-backdrop {

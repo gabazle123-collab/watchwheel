@@ -332,7 +332,8 @@
 
     <!-- TRAILERS -->
     <section id="trailers" class="screen" hidden>
-      <nav class="result-topbar">
+      <!-- Floating header -->
+      <div class="trailer-header">
         <button class="icon-btn" id="trailersBackBtn" aria-label="Back">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
             <path d="M10 3 L5 8 L10 13"/>
@@ -340,15 +341,16 @@
         </button>
         <span class="result-title">Explore trailers</span>
         <span style="width:30px;"></span>
-      </nav>
+      </div>
 
-      <div class="eyebrow"><span class="rule"></span>From your watchlist</div>
-      <h1 class="headline">A preview of <em>tonight's</em> options.</h1>
-      <p class="dek">Swipe through trailers from films you've saved.</p>
-
+      <!-- Snap-scroll feed (cards injected by JS) -->
       <div id="trailerFeed" class="trailer-feed"></div>
 
-      <p id="trailerStatus" class="status"></p>
+      <!-- Progress dots (injected by JS) -->
+      <div id="trailerDots" class="trailer-dots"></div>
+
+      <!-- Status / quota line -->
+      <p id="trailerStatus" class="trailer-status-line"></p>
     </section>
 
     <!-- RECENTLY PROGRAMMED -->

@@ -905,72 +905,124 @@ function renderLibrary() {
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
 
+// ── YouTube IFrame API (loaded once globally) ─────────────────────────────────
+
+let _ytReady = false;
+const _ytQueue = [];
+
+function ensureYouTubeAPI() {
+  if (_ytReady || document.querySelector('script[src*="youtube.com/iframe_api"]')) return;
+  const s = document.createElement('script');
+  s.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(s);
+}
+
+window.onYouTubeIframeAPIReady = function () {
+  _ytReady = true;
+  _ytQueue.splice(0).forEach(fn => fn());
+};
+
+function whenYouTubeReady(fn) {
+  if (_ytReady) { fn(); return; }
+  _ytQueue.push(fn);
+  ensureYouTubeAPI();
+}
+
 // ── Trailers ──────────────────────────────────────────────────────────────────
+
+let trailerObserver = null;
+let trailerMuted    = true;
 
 async function renderTrailers() {
   const feed   = $('trailerFeed');
+  const dots   = $('trailerDots');
   const status = $('trailerStatus');
 
+  // Teardown previous observer
+  if (trailerObserver) { trailerObserver.disconnect(); trailerObserver = null; }
+  trailerMuted = true;
+
+  // Kick off YT API loading in the background
+  ensureYouTubeAPI();
+
   if (!state.watchlist || state.watchlist.length === 0) {
-    feed.innerHTML = '<div class="trailer-empty">No films in your watchlist yet.</div>';
+    feed.innerHTML = `
+      <div class="trailer-end-card">
+        <p class="trailer-end-title">Nothing in your<br><em>watchlist</em> yet.</p>
+        <p class="trailer-end-sub">Add films on Letterboxd first, then come back.</p>
+      </div>`;
+    dots.innerHTML = '';
     status.textContent = '';
     return;
   }
 
-  // Pick a randomised subset of up to 20 films so the feed feels fresh each visit
+  // Randomised subset of up to 20 films — fresh feel each visit
   const pool = state.watchlist.slice().sort(() => Math.random() - 0.5).slice(0, 20);
 
-  // Skeleton cards render immediately
-  feed.innerHTML = pool.map(m => `
-    <div class="trailer-card" data-film-url="${m.url}">
-      <div class="trailer-video">
-        <div class="trailer-video-placeholder">Loading trailer…</div>
-      </div>
-      <div class="trailer-info">
-        <h3 class="trailer-title">${italiciseTitle(m.title)}</h3>
-        <div class="trailer-meta">${m.year || '—'} · Letterboxd</div>
-        <div class="trailer-actions">
-          <a class="btn-ghost" href="${m.url}" target="_blank" rel="noopener">View on Letterboxd</a>
+  // Skeleton cards render immediately so the screen feels instant
+  feed.innerHTML = pool.map((m, i) => `
+    <div class="trailer-card trailer-skeleton"
+         data-film-url="${escAttr(m.url)}"
+         data-film-index="${i}">
+      <div class="trailer-poster-bg"></div>
+      <div class="trailer-video-wrap"><div class="trailer-slot"></div></div>
+      <button class="trailer-mute-btn" aria-label="Toggle mute">${muteSvg(true)}</button>
+      <div class="trailer-info-overlay">
+        <h3 class="trailer-card-title">${italiciseTitle(m.title)}</h3>
+        <div class="trailer-card-meta">${m.year || '—'}</div>
+        <div class="trailer-card-actions">
+          <a class="trailer-lbx-link" href="${escAttr(m.url)}" target="_blank" rel="noopener">View on Letterboxd</a>
         </div>
       </div>
     </div>
-  `).join('');
+  `).join('') + `
+    <div class="trailer-end-card" data-film-index="${pool.length}">
+      <p class="trailer-end-title">That's all<br><em>for tonight.</em></p>
+      <p class="trailer-end-sub">You've seen every preview in tonight's selection.</p>
+      <button class="btn-primary" id="trailerEndHome" style="margin-top:8px;">Back to home</button>
+    </div>`;
 
+  // Progress dots — one per film card + end card
+  dots.innerHTML = Array.from({ length: pool.length + 1 }, (_, i) =>
+    `<div class="trailer-dot${i === 0 ? ' active' : ''}"></div>`).join('');
+
+  // Wire end-card CTA
+  const endBtn = $('trailerEndHome');
+  if (endBtn) endBtn.addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
+
+  // Wire mute buttons (per card — tap toggles globally)
+  feed.querySelectorAll('.trailer-mute-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); toggleMute(); });
+  });
+
+  // Start observing immediately — activates first card once data arrives
+  initTrailerObserver();
+
+  // Fetch video IDs from backend
   status.textContent = 'Finding trailers…';
   logo.classList.add('spinning');
-
   try {
-    const res  = await fetch(`${API_BASE}/trailers/batch`, {
+    const res  = await apiFetch('/trailers/batch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ films: pool }),
+      body:   JSON.stringify({ films: pool }),
     });
     const data = await res.json();
     const trailerMap = new Map((data.trailers || []).map(t => [t.url, t.youtube_id]));
     const quotaHit   = (data.trailers || []).some(t => t.error === 'quota_exceeded');
 
-    document.querySelectorAll('#trailerFeed .trailer-card').forEach(card => {
-      const url       = card.dataset.filmUrl;
-      const videoId   = trailerMap.get(url);
-      const videoSlot = card.querySelector('.trailer-video');
-
-      if (videoId) {
-        // Lazy embed — only load the YouTube iframe when the user actually taps
-        const placeholder = videoSlot.querySelector('.trailer-video-placeholder');
-        placeholder.textContent = '▶  Watch trailer';
-        placeholder.addEventListener('click', () => {
-          videoSlot.innerHTML =
-            `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0" ` +
-            `allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
-        });
-      } else {
-        videoSlot.innerHTML = '<div class="trailer-video-placeholder">No trailer found</div>';
-      }
+    // Stamp each card with its youtube_id (or '') and remove skeleton
+    feed.querySelectorAll('.trailer-card').forEach(card => {
+      const ytId = trailerMap.get(card.dataset.filmUrl) || null;
+      card.dataset.youtubeId = ytId || '';
+      card.classList.remove('trailer-skeleton');
+      if (!ytId) card.classList.add('trailer-no-video');
     });
 
-    status.textContent = quotaHit
-      ? 'Daily trailer quota reached — try again tomorrow.'
-      : '';
+    // Activate the top card now that video IDs are known
+    const first = feed.querySelector('.trailer-card');
+    if (first) activateCard(first);
+
+    status.textContent = quotaHit ? 'Daily trailer quota reached — try again tomorrow.' : '';
   } catch (e) {
     status.textContent = 'Couldn\'t load trailers.';
   } finally {
@@ -978,7 +1030,124 @@ async function renderTrailers() {
   }
 }
 
+function escAttr(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function muteSvg(muted) {
+  return muted
+    ? `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+         <path d="M11.5 5 L7 9 H4 v2 h3 l4.5 4 Z" fill="currentColor" stroke="none" opacity="0.85"/>
+         <line x1="14" y1="8" x2="18" y2="12"/><line x1="18" y1="8" x2="14" y2="12"/>
+       </svg>`
+    : `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+         <path d="M11.5 5 L7 9 H4 v2 h3 l4.5 4 Z" fill="currentColor" stroke="none" opacity="0.85"/>
+         <path d="M14 8.5 Q16.5 10 14 11.5"/>
+         <path d="M15.5 6.5 Q20 10 15.5 13.5"/>
+       </svg>`;
+}
+
+function initTrailerObserver() {
+  if (trailerObserver) trailerObserver.disconnect();
+  const feed = $('trailerFeed');
+  const items = [...feed.querySelectorAll('.trailer-card, .trailer-end-card')];
+  trailerObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.intersectionRatio >= 0.6) activateCard(entry.target);
+    });
+  }, { root: feed, threshold: 0.6 });
+  items.forEach(el => trailerObserver.observe(el));
+}
+
+function activateCard(card) {
+  const feed     = $('trailerFeed');
+  const dotEls   = [...$('trailerDots').querySelectorAll('.trailer-dot')];
+  const allItems = [...feed.querySelectorAll('.trailer-card, .trailer-end-card')];
+  const idx      = allItems.indexOf(card);
+
+  // Update progress dots
+  dotEls.forEach((d, i) => d.classList.toggle('active', i === idx));
+
+  // Manage iframe lifecycle — load active ±1, unload distant
+  allItems.forEach((c, i) => {
+    if (c.classList.contains('trailer-end-card')) return;
+    if (Math.abs(i - idx) <= 1) loadTrailerIframe(c);
+    else                        unloadTrailerIframe(c);
+  });
+
+  // Autoplay the active card's player
+  const p = card._ytPlayer;
+  if (p) {
+    try { p.playVideo(); trailerMuted ? p.mute() : p.unMute(); } catch (_) {}
+  }
+
+  // Pause all other cards
+  allItems.forEach(c => {
+    if (c === card || !c._ytPlayer) return;
+    try { c._ytPlayer.pauseVideo(); } catch (_) {}
+  });
+}
+
+function loadTrailerIframe(card) {
+  if (card._ytPlayer || card._ytLoading) return;
+  const ytId = card.dataset.youtubeId;
+  if (!ytId) return;
+  if (!card.querySelector('.trailer-slot')) return;
+  card._ytLoading = true;
+  whenYouTubeReady(() => {
+    card._ytLoading = false;
+    if (card._ytPlayer) return;
+    const target = card.querySelector('.trailer-slot');
+    if (!target) return; // was unloaded while waiting
+    card._ytPlayer = new window.YT.Player(target, {
+      videoId: ytId,
+      playerVars: {
+        autoplay: 1, mute: 1, controls: 0,
+        modestbranding: 1, rel: 0, playsinline: 1, enablejsapi: 1,
+      },
+      events: {
+        onReady(e) {
+          e.target.playVideo();
+          if (!trailerMuted) e.target.unMute();
+        },
+        onError() { card.classList.add('trailer-no-video'); },
+      },
+    });
+  });
+}
+
+function unloadTrailerIframe(card) {
+  card._ytLoading = false;
+  if (!card._ytPlayer) return;
+  try { card._ytPlayer.destroy(); } catch (_) {}
+  card._ytPlayer = null;
+  // Recreate the slot so the next loadTrailerIframe() has a target
+  const wrap = card.querySelector('.trailer-video-wrap');
+  if (wrap) {
+    const slot = document.createElement('div');
+    slot.className = 'trailer-slot';
+    wrap.appendChild(slot);
+  }
+}
+
+function toggleMute() {
+  trailerMuted = !trailerMuted;
+  const feed = $('trailerFeed');
+  // Apply to all loaded players
+  feed.querySelectorAll('.trailer-card').forEach(c => {
+    if (!c._ytPlayer) return;
+    try { trailerMuted ? c._ytPlayer.mute() : c._ytPlayer.unMute(); } catch (_) {}
+  });
+  // Update all mute button icons
+  feed.querySelectorAll('.trailer-mute-btn').forEach(btn => {
+    btn.innerHTML = muteSvg(trailerMuted);
+  });
+}
+
 $('trailersBackBtn').addEventListener('click', () => {
+  // Teardown observer and destroy all active players
+  if (trailerObserver) { trailerObserver.disconnect(); trailerObserver = null; }
+  $('trailerFeed').querySelectorAll('.trailer-card').forEach(unloadTrailerIframe);
   show('home');
   setProgrammeEyebrow();
 });
