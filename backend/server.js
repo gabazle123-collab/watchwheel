@@ -255,126 +255,13 @@ app.get('/poster', async (req, res) => {
   res.json({ image, tagline, synopsis, runtime_minutes: runtimeMinutes });
 });
 
-// ── Trailer discovery (3-tier waterfall) ─────────────────────────────────────
+// ── Trailer discovery (YouTube-only, 2-tier) ─────────────────────────────────
 //
 // For each film, try in order — stop at the first hit:
-//   1. Letterboxd scrape (free, accurate)
-//   2. YouTube search "{title} {year} official trailer"
-//   3. YouTube search "{title} {year} teaser"
-// Result cached with trailer_source so future loads skip the waterfall.
-
-// Extract an 11-char YouTube video ID from any of the URL shapes Letterboxd
-// uses: watch?v=, /embed/, youtu.be/, youtube-nocookie.com/embed/, with or
-// without a protocol (Letterboxd hrefs are protocol-relative: //youtube.com/...).
-// Returns null for Vimeo / other hosts.
-function extractYouTubeId(url) {
-  if (!url) return null;
-  if (!/youtu\.?be/i.test(url)) return null; // skip vimeo and friends fast
-  const patterns = [
-    /[?&]v=([A-Za-z0-9_-]{11})(?:[&#?]|$)/,
-    /\/embed\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,
-    /youtu\.be\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,
-    /\/v\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,           // legacy /v/ embed
-    /\/shorts\/([A-Za-z0-9_-]{11})(?:[?&#/]|$)/,      // YouTube Shorts
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
-  return null;
-}
-
-// Try every attribute on a cheerio element that could carry a trailer URL.
-// Handles URL-encoded and JSON-wrapped values that Letterboxd has used at
-// various times.
-function videoIdFromElement($el) {
-  const attrs = ['data-trailer-url', 'data-trailer', 'data-youtube-url', 'data-video-url', 'data-youtube-id', 'href', 'src'];
-  for (const attr of attrs) {
-    let raw = $el.attr(attr);
-    if (!raw) continue;
-    // data-youtube-id sometimes holds just the 11-char ID
-    if (attr === 'data-youtube-id' && /^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
-    // Decode if it looks URL-encoded
-    if (raw.includes('%')) {
-      try { raw = decodeURIComponent(raw); } catch {}
-    }
-    // Sometimes the value is JSON like {"url":"//youtube.com/embed/abc"}
-    if (raw.trim().startsWith('{')) {
-      try {
-        const parsed = JSON.parse(raw);
-        const inner = parsed.url || parsed.src || parsed.href || parsed.youtube_url;
-        if (inner) {
-          const id = extractYouTubeId(inner);
-          if (id) return id;
-        }
-      } catch {}
-    }
-    const id = extractYouTubeId(raw);
-    if (id) return id;
-  }
-  return null;
-}
-
-// Tier 1: scrape the Letterboxd film page for an embedded trailer.
-// Returns { youtube_id, matched_selector } — selector logged for visibility
-// into which markup form Letterboxd is using on any given day.
-async function scrapeLetterboxdTrailer(filmUrl) {
-  if (!filmUrl) return null;
-  try {
-    const response = await axios.get(filmUrl, {
-      validateStatus: () => true,
-      timeout: 10000,
-      headers: LETTERBOXD_HEADERS,
-    });
-    if (response.status !== 200) {
-      console.warn(`[trailer] letterboxd non-200 (${response.status}) for ${filmUrl}`);
-      return null;
-    }
-
-    const $ = cheerio.load(response.data);
-
-    // Current Letterboxd markup (verified against oppenheimer, dune-part-two,
-    // poor-things, the-smashing-machine):
-    //
-    //   <p class="trailer-link js-watch-panel-trailer">
-    //     <a class="play track-event js-video-zoom"
-    //        data-track-category="Trailer"
-    //        href="//www.youtube.com/embed/VIDEO_ID?rel=0&wmode=transparent">
-    //
-    // Note: data-track-CATEGORY not data-track-ACTION. Older selectors kept
-    // as fallbacks in case Letterboxd reverts or A/B tests change the markup.
-    const selectors = [
-      'a[data-track-category="Trailer"]',
-      'p.trailer-link a',
-      '.js-watch-panel-trailer a',
-      'a.js-video-zoom',
-      'a[data-track-action="Trailer"]',
-      'a[data-track-action="Play trailer"]',
-      '[data-trailer-url]',
-      'iframe[src*="youtube.com/embed/"]',
-      'iframe[src*="youtube-nocookie.com/embed/"]',
-      'a[href*="youtube.com/watch"]',
-      'a[href*="youtu.be/"]',
-    ];
-
-    for (const sel of selectors) {
-      let found = null;
-      $(sel).each((_, el) => {
-        if (found) return false;
-        const id = videoIdFromElement($(el));
-        if (id) { found = id; return false; }
-      });
-      if (found) {
-        console.log(`[trailer] letterboxd selector matched: "${sel}" → ${found}`);
-        return found;
-      }
-    }
-    return null;
-  } catch (e) {
-    console.error('[trailer] letterboxd scrape error:', e.message);
-    return null;
-  }
-}
+//   1. YouTube search "{title} {year} official trailer"
+//   2. YouTube search "{title} {year} teaser"
+// Results cached on film_metadata_cache.youtube_id + trailer_checked_at.
+// Cache hit (id or 30-day-fresh null) short-circuits — zero quota cost.
 
 // Concurrency limiter — used to throttle YouTube API fan-out so we don't
 // hit the per-minute rate cap when many films fall through to tier 2/3.
@@ -450,43 +337,35 @@ function isTransientError(err) {
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Cache-aware waterfall lookup. Sequential per film, parallel across films.
+// Cache-aware YouTube lookup. Per-film tiers run sequentially (don't burn
+// a teaser search if the trailer search already hit); /trailers/batch
+// parallelises across films via Promise.all.
 async function getTrailerForFilm({ title, year, filmUrl }) {
   // ── Cache lookup ──
   if (supabase && filmUrl) {
     const { data: cached } = await supabase
       .from('film_metadata_cache')
-      .select('youtube_id, trailer_checked_at, trailer_source')
+      .select('youtube_id, trailer_checked_at')
       .eq('letterboxd_url', filmUrl)
       .maybeSingle();
 
     if (cached?.youtube_id) {
-      console.log(`[trailer] cache hit (source=${cached.trailer_source || 'unknown'}) for ${title}`);
-      return { youtube_id: cached.youtube_id, source: cached.trailer_source || null, cached: true };
+      return { youtube_id: cached.youtube_id, source: 'cache', cached: true };
     }
     if (cached?.trailer_checked_at) {
       const age = Date.now() - new Date(cached.trailer_checked_at).getTime();
       if (age < THIRTY_DAYS_MS) {
         // Recently confirmed no trailer — don't burn another search
-        return { youtube_id: null, source: null, cached: true };
+        return { youtube_id: null, source: 'cache', cached: true };
       }
     }
   }
 
-  // ── Tier 1: Letterboxd scrape ──
+  // ── Tier 1: YouTube "official trailer" (throttled to 5 concurrent) ──
   let videoId = null;
   let source  = null;
 
-  if (filmUrl) {
-    videoId = await scrapeLetterboxdTrailer(filmUrl);
-    if (videoId) {
-      source = 'letterboxd';
-      console.log(`[trailer] letterboxd → ${videoId} for ${title}`);
-    }
-  }
-
-  // ── Tier 2: YouTube "official trailer" (throttled to 5 concurrent) ──
-  if (!videoId) {
+  {
     const r = await limitYouTube(() => searchYouTubeForFilm(title, year, 'official trailer'));
     if (isTransientError(r.error)) return r;
     if (r.youtube_id) {
@@ -496,7 +375,7 @@ async function getTrailerForFilm({ title, year, filmUrl }) {
     }
   }
 
-  // ── Tier 3: YouTube "teaser" (throttled to 5 concurrent) ──
+  // ── Tier 2: YouTube "teaser" (throttled to 5 concurrent) ──
   if (!videoId) {
     const r = await limitYouTube(() => searchYouTubeForFilm(title, year, 'teaser'));
     if (isTransientError(r.error)) return r;
@@ -518,7 +397,6 @@ async function getTrailerForFilm({ title, year, filmUrl }) {
       letterboxd_url:     filmUrl,
       title:              title || 'Unknown',
       youtube_id:         videoId,
-      trailer_source:     source,
       trailer_checked_at: new Date().toISOString(),
       cached_at:          new Date().toISOString(),
     }, { onConflict: 'letterboxd_url' })
@@ -555,8 +433,11 @@ app.post('/trailers/batch', async (req, res) => {
     return { url: f.url, youtube_id: r.youtube_id, source: r.source || null, error: r.error };
   }));
 
-  // Per-tier summary
-  const counts = { letterboxd: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
+  // Per-tier summary. `cache` covers films served from the DB cache (where
+  // we don't know which YouTube tier originally produced the hit). The
+  // youtube_trailer / youtube_teaser columns count THIS-batch fresh searches,
+  // so they're the only ones that cost quota — useful for spotting drift.
+  const counts = { cache: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
   for (const r of results) {
     if (r.youtube_id && r.source && counts[r.source] !== undefined) counts[r.source]++;
     else counts.none++;
@@ -565,7 +446,7 @@ app.post('/trailers/batch', async (req, res) => {
   const quota = results.some(r => r.error === 'quota_exceeded');
   console.log(
     `[trailers/batch] ${films.length} films → ${hits} trailers found ` +
-    `(letterboxd: ${counts.letterboxd}, youtube_trailer: ${counts.youtube_trailer}, ` +
+    `(cache: ${counts.cache}, youtube_trailer: ${counts.youtube_trailer}, ` +
     `youtube_teaser: ${counts.youtube_teaser}, none: ${counts.none})` +
     (quota ? ' [quota exceeded]' : '')
   );
