@@ -1,93 +1,78 @@
 /* ─── WatchWheel — late-night repertory theatre ───────────────────────────── */
 
 :root {
-  /* Backgrounds — warmer, less blue */
   --ww-bg-deep: #0a0f14;
-  --ww-bg-mid:  #15191f;
-  --ww-bg-top:  #252a33;
-
-  /* Typography — warm cream, not bright white */
-  --ww-cream:       #faf7f2;
-  --ww-cream-dim:   #e8dfd5;
+  --ww-bg-mid: #15191f;
+  --ww-bg-top: #252a33;
+  --ww-cream: #faf7f2;
+  --ww-cream-dim: #e8dfd5;
   --ww-cream-muted: #d4cec4;
-  --ww-taupe:       #9a907d;
-  --ww-taupe-dim:   #8a8275;
-
-  /* Accents — muted tobacco amber, NOT neon */
-  --ww-amber:        #a8845c;
+  --ww-taupe: #9a907d;
+  --ww-taupe-dim: #8a8275;
+  --ww-amber: #a8845c;
   --ww-amber-bright: #c9a872;
-  --ww-amber-text:   #d4ae7d;
+  --ww-amber-text: #d4ae7d;
   --ww-burnt-orange: #8b6f4e;
-  --ww-burgundy:     #7a5a3a;
-  --ww-brass:        #9d8b6f;
-
-  /* Surfaces & borders — softer, more transparent */
-  --ww-surface:        rgba(21,25,31,0.45);
-  --ww-border:         rgba(232,223,213,0.06);
-  --ww-border-strong:  rgba(232,223,213,0.10);
-  --ww-vignette-outer: rgba(10,15,20,0.4);
-
+  --ww-burgundy: #7a5a3a;
+  --ww-brass: #9d8b6f;
+  --ww-surface: rgba(21, 25, 31, 0.45);
+  --ww-border: rgba(232, 223, 213, 0.06);
+  --ww-border-strong: rgba(232, 223, 213, 0.10);
   --font-serif: 'Fraunces', Georgia, serif;
-  --font-sans:  'Inter', -apple-system, system-ui, sans-serif;
+  --font-sans: 'Inter', -apple-system, system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
 
-/* ── Ambient drifting projector glow (subtle, atmospheric) ─────────────── */
-@keyframes ambientGlow {
-  0%, 100% {
-    background-position: 50% 20%;
-    background-size: 110% 90%;
-  }
-  50% {
-    background-position: 45% 35%;
-    background-size: 100% 80%;
-  }
-}
-
 body {
-  background:
-    radial-gradient(
-      ellipse 110% 90% at 50% 20%,
-      rgba(75, 60, 45, 0.08) 0%,
-      rgba(21, 25, 31, 0.3) 50%,
-      var(--ww-bg-deep) 100%
-    );
-  animation: ambientGlow 12s ease-in-out infinite;
+  font-family: var(--font-sans);
   color: var(--ww-cream);
   min-height: 100vh;
   min-height: 100dvh;
   padding: 18px 20px calc(18px + env(safe-area-inset-bottom)) 20px;
   position: relative;
   overflow-x: hidden;
-  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  background: #0a0f14;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 20%, rgba(139, 111, 78, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, rgba(75, 60, 45, 0.06) 0%, transparent 60%);
+  background-attachment: fixed;
 }
 
 body.warm-bg {
-  background:
-    radial-gradient(
-      ellipse 100% 70% at 50% 15%,
-      rgba(139, 111, 78, 0.18) 0%,
-      rgba(58, 45, 38, 0.4) 35%,
-      var(--ww-bg-deep) 90%
-    );
-  animation: ambientGlow 12s ease-in-out infinite;
+  background: #0a0f14;
+  background-image:
+    radial-gradient(ellipse 90% 70% at 50% 15%, rgba(139, 111, 78, 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, rgba(75, 60, 45, 0.1) 0%, transparent 60%);
+  background-attachment: fixed;
 }
 
-/* ── Texture overlays — worn film stock, archival vignette ─────────────── */
 .grain {
-  position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0.03;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .vignette {
-  position: fixed; inset: 0; pointer-events: none; z-index: 2;
-  background: radial-gradient(ellipse 120% 90% at 50% 50%, transparent 35%, var(--ww-vignette-outer) 100%);
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(ellipse 120% 80% at 50% 50%, transparent 40%, rgba(8, 12, 18, 0.5) 100%);
 }
 
-.container { position: relative; z-index: 3; width: 100%; max-width: 380px; margin: 0 auto; }
+.container {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+}
 
 /* ── Top bar ───────────────────────────────────────────────────────────── */
 .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
