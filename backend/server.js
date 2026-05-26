@@ -425,32 +425,62 @@ app.get('/trailer', async (req, res) => {
 
 // POST /trailers/batch  body: { films: [{title, year, url}] }
 //
-// Waterfall is sequential per film but parallel across films — 20 Letterboxd
-// scrapes fire at once; tier 2/3 only run for films where earlier tiers missed.
-app.post('/trailers/batch', async (req, res) => {
+// Resolution order per film:
+//   1. user_films.youtube_id    — set by the TMDB import; zero API cost
+//   2. film_metadata_cache hit  — set by earlier YouTube searches; zero cost
+//   3. YouTube search "official trailer"  → 100 quota units
+//   4. YouTube search "teaser"            → 100 quota units
+// Tier 1 is a single bulk lookup at the top of the handler; tiers 2-4 run
+// per-film via getTrailerForFilm() (parallel across films, sequential within).
+app.post('/trailers/batch', requireAuth, async (req, res) => {
   const films = Array.isArray(req.body?.films) ? req.body.films.slice(0, 20) : [];
   if (films.length === 0) return res.json({ trailers: [] });
 
+  // ── Tier 1: bulk-lookup user_films.youtube_id ──
+  // One round-trip, zero YouTube cost. Most films come from the TMDB import
+  // and already have a trailer key — this short-circuits the waterfall.
+  const urls = films.map(f => f.url).filter(Boolean);
+  const userFilmsMap = {};
+  if (urls.length > 0 && supabase) {
+    const { data: userFilms, error } = await supabase
+      .from('user_films')
+      .select('letterboxd_url, youtube_id')
+      .eq('user_id', req.user.id)
+      .in('letterboxd_url', urls);
+    if (error) {
+      console.error('[trailers/batch] user_films lookup failed:', error.message);
+    } else {
+      (userFilms || []).forEach(f => {
+        if (f.youtube_id) userFilmsMap[f.letterboxd_url] = f.youtube_id;
+      });
+    }
+  }
+
+  // ── Tiers 2-4: only run for films that didn't already have a TMDB key ──
   const results = await Promise.all(films.map(async (f) => {
+    if (userFilmsMap[f.url]) {
+      return { url: f.url, youtube_id: userFilmsMap[f.url], source: 'tmdb' };
+    }
     const r = await getTrailerForFilm({ title: f.title, year: f.year, filmUrl: f.url });
     return { url: f.url, youtube_id: r.youtube_id, source: r.source || null, error: r.error };
   }));
 
-  // Per-tier summary. `cache` covers films served from the DB cache (where
-  // we don't know which YouTube tier originally produced the hit). The
-  // youtube_trailer / youtube_teaser columns count THIS-batch fresh searches,
-  // so they're the only ones that cost quota — useful for spotting drift.
-  const counts = { cache: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
+  // Per-source summary. `tmdb` = served from user_films (import). `cache` =
+  // served from film_metadata_cache (an earlier YouTube search this user or
+  // another user did). `youtube_trailer` / `youtube_teaser` = fresh searches
+  // this batch — those are the only ones that cost quota.
+  const counts = { tmdb: 0, cache: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
   for (const r of results) {
     if (r.youtube_id && r.source && counts[r.source] !== undefined) counts[r.source]++;
-    else counts.none++;
+    else if (!r.youtube_id) counts.none++;
   }
   const hits  = films.length - counts.none;
   const quota = results.some(r => r.error === 'quota_exceeded');
   console.log(
-    `[trailers/batch] ${films.length} films → ${hits} trailers found ` +
-    `(cache: ${counts.cache}, youtube_trailer: ${counts.youtube_trailer}, ` +
-    `youtube_teaser: ${counts.youtube_teaser}, none: ${counts.none})` +
+    `[trailers/batch] ${films.length} films → ${hits} trailers ` +
+    `(tmdb: ${counts.tmdb}, cache: ${counts.cache}, ` +
+    `youtube_trailer: ${counts.youtube_trailer}, youtube_teaser: ${counts.youtube_teaser}, ` +
+    `none: ${counts.none})` +
     (quota ? ' [quota exceeded]' : '')
   );
 

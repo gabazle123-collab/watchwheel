@@ -1187,33 +1187,72 @@ async function renderTrailers() {
   // Start observing immediately — activates first card once data arrives
   initTrailerObserver();
 
-  // Fetch video IDs from backend
-  status.textContent = 'Finding trailers…';
+  // Split: films we already have a youtube_id for (from the TMDB import)
+  // can be stamped without hitting the backend at all. The rest fall
+  // through to /trailers/batch which checks film_metadata_cache + YouTube.
+  const known     = new Map();
+  const needLookup = [];
+  for (const f of pool) {
+    if (f.youtube_id) known.set(f.url, f.youtube_id);
+    else              needLookup.push(f);
+  }
+
+  // Apply the known IDs to their cards immediately
+  feed.querySelectorAll('.trailer-card').forEach(card => {
+    const id = known.get(card.dataset.filmUrl);
+    if (id) {
+      card.dataset.youtubeId = id;
+      card.classList.remove('trailer-skeleton');
+    }
+  });
+
+  console.log(
+    `[trailers] pool=${pool.length} from import=${known.size} need lookup=${needLookup.length}`
+  );
+
+  // Activate the top card now if it's a known one — gets playback started
+  // while any lookups are in flight.
+  const firstCard = feed.querySelector('.trailer-card');
+  if (firstCard?.dataset.youtubeId) activateCard(firstCard);
+
+  // No films need a lookup → skip the network round-trip entirely.
+  if (needLookup.length === 0) {
+    status.textContent = '';
+    return;
+  }
+
+  status.textContent = needLookup.length === pool.length
+    ? 'Finding trailers…'
+    : `Finding ${needLookup.length} more…`;
   logo.classList.add('spinning');
   try {
     const res  = await apiFetch('/trailers/batch', {
       method: 'POST',
-      body:   JSON.stringify({ films: pool }),
+      body:   JSON.stringify({ films: needLookup }),
     });
     const data = await res.json();
     const trailerMap = new Map((data.trailers || []).map(t => [t.url, t.youtube_id]));
     const quotaHit   = (data.trailers || []).some(t => t.error === 'quota_exceeded');
 
-    // Stamp each card with its youtube_id (or '') and remove skeleton
-    feed.querySelectorAll('.trailer-card').forEach(card => {
+    // Stamp only the cards that were waiting on a lookup; cards already
+    // resolved by the TMDB-import path are left alone.
+    feed.querySelectorAll('.trailer-card.trailer-skeleton').forEach(card => {
       const ytId = trailerMap.get(card.dataset.filmUrl) || null;
       card.dataset.youtubeId = ytId || '';
       card.classList.remove('trailer-skeleton');
       if (!ytId) card.classList.add('trailer-no-video');
     });
 
-    // Activate the top card now that video IDs are known
-    const first = feed.querySelector('.trailer-card');
-    if (first) activateCard(first);
+    // If the top card wasn't activated above (because it was waiting on a
+    // lookup), do it now.
+    if (firstCard && !firstCard._ytPlayer && firstCard.dataset.youtubeId) {
+      activateCard(firstCard);
+    }
 
     status.textContent = quotaHit ? 'Daily trailer quota reached — try again tomorrow.' : '';
   } catch (e) {
-    status.textContent = 'Couldn\'t load trailers.';
+    console.error('[trailers] batch lookup failed:', e);
+    status.textContent = "Couldn't load trailers.";
   } finally {
     logo.classList.remove('spinning');
   }
