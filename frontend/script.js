@@ -1014,21 +1014,14 @@ $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyeb
 // to send mute/unMute commands directly.
 //
 // Mute model: PER-CARD, NOT sticky. Every card autoplays muted (mute=1
-// in URL — the only variant browsers reliably allow). The mute toggle
-// flips audio on the current card via postMessage. The next card starts
-// muted again. Earlier versions tried to carry the unmute preference
-// forward via a post-load postMessage unMute, but on iOS that timing
-// fights the autoplay policy and broke playback entirely — better UX
-// to make the user re-tap unmute per card than to break video starts.
-//
-// iOS Safari additionally blocks iframe autoplay triggered by
-// IntersectionObserver (it requires a direct user tap). On iOS we render
-// a poster + play-button overlay and only load the iframe on tap;
-// desktop / Android keep the auto-load-on-scroll behaviour.
+// in URL — the only variant browsers reliably allow). Tapping the card
+// body flips audio on the current card via postMessage; the next card
+// starts muted again. The icon in the top-right is a passive indicator
+// (pointer-events:none) — it doesn't catch the tap, it just reflects
+// state. Tapping the Letterboxd link inside the info overlay still
+// navigates normally (excluded from the toggle handler).
 
 let trailerObserver = null;
-
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
 function trailerEmbedUrl(ytId) {
   // controls=0 hides the YouTube UI; modestbranding=1 removes the YouTube
@@ -1082,7 +1075,7 @@ async function renderTrailers() {
       <div class="trailer-no-trailer-overlay">
         <span class="trailer-no-trailer-text">No trailer available</span>
       </div>
-      <button class="trailer-mute-btn" aria-label="Toggle mute">${muteSvg(true)}</button>
+      <div class="trailer-mute-btn" aria-label="Mute status" role="img">${muteSvg(true)}</div>
       <div class="trailer-info-overlay">
         <h3 class="trailer-card-title">${italiciseTitle(m.title)}</h3>
         <div class="trailer-card-meta">${m.year || '—'}</div>
@@ -1106,11 +1099,13 @@ async function renderTrailers() {
   const endBtn = $('trailerEndHome');
   if (endBtn) endBtn.addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
 
-  // Wire mute buttons — each tap toggles the audio on its own card only
-  feed.querySelectorAll('.trailer-mute-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      toggleMute(btn.closest('.trailer-card'));
+  // Tap anywhere on the card body toggles mute — the mute icon in the
+  // corner is a passive indicator (see CSS pointer-events:none) so taps
+  // pass through. Excludes the Letterboxd link, which navigates normally.
+  feed.querySelectorAll('.trailer-card').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('.trailer-lbx-link')) return;
+      toggleMute(card);
     });
   });
 
@@ -1200,69 +1195,23 @@ function updateMuteIcon(card, muted) {
   if (btn) btn.innerHTML = muteSvg(muted);
 }
 
-// Shared iframe-loading core — called either directly (desktop / Android
-// when the observer fires) or from the tap-to-play overlay's click handler
-// on iOS. Always loads muted; if the user wants audio they tap the mute
-// button after load, which sends a postMessage unMute (works because the
-// video is already playing — no autoplay-policy interaction).
-function attachIframeSrc(card) {
+function loadCardIframe(card) {
   const iframe = card.querySelector('iframe');
   const ytId   = card.dataset.youtubeId;
   if (!iframe || !ytId) return;
   if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded
 
+  // Muted autoplay is allowed on every browser including iOS Safari,
+  // provided playsinline=1 and mute=1 are set (both are in the URL).
   iframe.src         = trailerEmbedUrl(ytId);
   card.dataset.muted = 'true';
   updateMuteIcon(card, true);
 }
 
-function loadCardIframe(card) {
-  const ytId = card.dataset.youtubeId;
-  if (!ytId) return;
-
-  // iOS: show poster + play button. iframe.src is set only when the user
-  // actually taps, which gives the iframe a real user-gesture context and
-  // lets autoplay through.
-  if (isIOS) {
-    showTapToPlay(card);
-    return;
-  }
-
-  // Desktop / Android — fire-and-forget autoplay works directly.
-  attachIframeSrc(card);
-}
-
-function showTapToPlay(card) {
-  if (card.querySelector('.tap-to-play')) return; // already showing
-
-  const overlay = document.createElement('div');
-  overlay.className = 'tap-to-play';
-  overlay.innerHTML = `
-    <div class="tap-play-btn" aria-label="Play trailer">
-      <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor">
-        <path d="M8 5v14l11-7z"/>
-      </svg>
-    </div>`;
-
-  overlay.addEventListener('click', () => {
-    overlay.remove();
-    attachIframeSrc(card);
-  }, { once: true });
-
-  const wrap = card.querySelector('.trailer-video-wrap');
-  if (wrap) wrap.appendChild(overlay);
-}
-
 function unloadCardIframe(card) {
   const iframe = card.querySelector('iframe');
   if (iframe && iframe.src) iframe.src = '';
-  card.querySelector('.tap-to-play')?.remove();
   delete card.dataset.muted;
-  // On iOS, prime the card for re-entry by immediately re-showing the
-  // tap-to-play overlay. The observer will fire again on scroll-in and
-  // call loadCardIframe → showTapToPlay (which no-ops if already present),
-  // but priming it here avoids a flash of empty poster between scrolls.
-  if (isIOS) showTapToPlay(card);
 }
 
 function escAttr(s) {

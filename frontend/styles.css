@@ -489,6 +489,8 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   scroll-snap-stop: always;
   overflow: hidden;
   background: var(--ww-bg-deep);
+  cursor: pointer;  /* tap toggles mute */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Blurred poster backdrop (dark fallback / while iframe loads) */
@@ -512,7 +514,8 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   pointer-events: none; /* controls=0; parent handles taps */
 }
 
-/* Mute toggle — top-right, below the back button */
+/* Mute indicator — top-right, below the back button. Passive (no
+   clicks) — the actual mute toggle is a tap anywhere on the card body. */
 .trailer-mute-btn {
   position: absolute; top: 62px; right: 14px;
   z-index: 10;
@@ -521,12 +524,8 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   border: 1px solid rgba(232,223,213,0.14);
   color: var(--ww-cream-dim);
   display: grid; place-items: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.15s;
+  pointer-events: none;
 }
-.trailer-mute-btn:active { background: rgba(168,132,92,0.3); }
-.trailer-mute-btn svg { pointer-events: none; }
 
 /* Bottom info overlay */
 .trailer-info-overlay {
@@ -569,33 +568,6 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   -webkit-tap-highlight-color: transparent;
 }
 .trailer-lbx-link:hover { color: var(--ww-cream-dim); border-color: rgba(232,223,213,0.28); }
-
-/* Tap-to-play overlay (iOS only — IntersectionObserver-triggered autoplay
-   is blocked in iOS Safari, so we render the poster + a play button and
-   only load the iframe when the user taps). z-index 6 sits above the
-   bottom info-overlay (5) but below the mute button (10). */
-.tap-to-play {
-  position: absolute; inset: 0;
-  z-index: 6;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(10, 15, 20, 0.4);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.tap-play-btn {
-  width: 72px; height: 72px;
-  border-radius: 50%;
-  background: rgba(168, 132, 92, 0.15);
-  border: 1.5px solid rgba(168, 132, 92, 0.4);
-  color: var(--ww-cream);
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s, transform 0.15s;
-}
-.tap-play-btn:active {
-  background: rgba(168, 132, 92, 0.3);
-  transform: scale(0.96);
-}
-.tap-play-btn svg { display: block; }
 
 /* "No trailer" annotation in meta line + full-card overlay */
 .trailer-card.trailer-no-video .trailer-card-meta::after {
