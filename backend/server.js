@@ -556,17 +556,17 @@ async function processImport(userId, importId, entries) {
     try {
       const hit = await searchTmdb(entry.title, entry.year);
       let row = {
-        user_id:        userId,
-        title:          entry.title,
-        year:           entry.year,
-        letterboxd_url: entry.letterboxd_url,
-        tmdb_id:        null,
-        poster_url:     null,
-        runtime:        null,
-        synopsis:       null,
-        genres:         null,
-        youtube_id:     null,
-        status:         'unmatched',
+        user_id:         userId,
+        title:           entry.title,
+        year:            entry.year,
+        letterboxd_url:  entry.letterboxd_url,
+        tmdb_id:         null,
+        poster_url:      null,
+        runtime_minutes: null,
+        synopsis:        null,
+        genres:          null,
+        youtube_id:      null,
+        status:          'unmatched',
       };
       if (hit?.id) {
         const details = await fetchTmdbDetails(hit.id);
@@ -576,15 +576,16 @@ async function processImport(userId, importId, entries) {
           details?.videos?.results?.find(v => v.site === 'YouTube');
         row = {
           ...row,
-          tmdb_id:    hit.id,
-          poster_url: details?.poster_path
+          tmdb_id:         hit.id,
+          poster_url:      details?.poster_path
             ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
             : (hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null),
-          runtime:    details?.runtime || null,
-          synopsis:   details?.overview || hit.overview || null,
-          genres:     details?.genres?.map(g => g.name) || null,
-          youtube_id: trailer?.key || null,
-          status:     'ready',
+          // TMDB returns `runtime` (minutes int); our column is runtime_minutes
+          runtime_minutes: details?.runtime || null,
+          synopsis:        details?.overview || hit.overview || null,
+          genres:          details?.genres?.map(g => g.name) || null,
+          youtube_id:      trailer?.key || null,
+          status:          'ready',
         };
         matched++;
       }
@@ -731,16 +732,16 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
   // Map to the picker's contract; year normalised to a string so the
   // filterWatchlist() parseInt(m.year) call keeps working.
   const films = (data || []).map(f => ({
-    title:      f.title,
-    year:       f.year ? String(f.year) : '',
-    url:        f.letterboxd_url,
-    poster:     f.poster_url,
-    tmdb_id:    f.tmdb_id,
-    runtime:    f.runtime,
-    synopsis:   f.synopsis,
-    genres:     f.genres,
-    youtube_id: f.youtube_id,
-    status:     f.status,
+    title:           f.title,
+    year:            f.year ? String(f.year) : '',
+    url:             f.letterboxd_url,
+    poster:          f.poster_url,
+    tmdb_id:         f.tmdb_id,
+    runtime_minutes: f.runtime_minutes,
+    synopsis:        f.synopsis,
+    genres:          f.genres,
+    youtube_id:      f.youtube_id,
+    status:          f.status,
   }));
   res.json(films);
 });

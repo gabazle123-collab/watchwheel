@@ -13,7 +13,7 @@ create table if not exists public.user_films (
   year            int,
   letterboxd_url  text,
   poster_url      text,
-  runtime         int,
+  runtime_minutes int,
   synopsis        text,
   genres          text[],
   youtube_id      text,
