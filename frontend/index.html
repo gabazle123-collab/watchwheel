@@ -45,18 +45,6 @@
       </button>
     </nav>
 
-    <!-- ONBOARDING -->
-    <section id="onboarding" class="screen" hidden>
-      <div class="eyebrow"><span class="rule"></span>An introduction</div>
-      <h1 class="headline">A film from your watchlist, chosen for <em>tonight</em>.</h1>
-      <p class="dek">Enter your Letterboxd username. We'll remember it.</p>
-      <div class="input-row">
-        <input type="text" id="usernameInput" placeholder="letterboxd username" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button class="btn-primary" id="saveUsernameBtn">Begin</button>
-      </div>
-      <p id="onboardStatus" class="status"></p>
-    </section>
-
     <!-- HOME / PICKER -->
     <section id="home" class="screen" hidden>
       <div class="eyebrow"><span class="rule"></span><span id="programmeNo">No. 1</span> · <span id="programmeDay">A programme</span></div>
@@ -185,7 +173,6 @@
       <div class="cta-stack" style="margin-top:32px;">
         <button class="btn-primary" id="goSignupBtn">Create an account</button>
         <button class="btn-ghost" id="goSigninBtn">Sign in</button>
-        <button class="auth-guest-link" id="guestBtn">Continue as guest →</button>
       </div>
     </section>
 
@@ -437,10 +424,6 @@
     <div class="sheet-row" id="sheetAccount" hidden>
       <span>Account</span>
       <span class="sheet-meta" id="currentUser"></span>
-    </div>
-    <div class="sheet-row" id="sheetChangeUser">
-      <span>Change username</span>
-      <span class="sheet-meta" id="currentUserGuest"></span>
     </div>
     <div class="sheet-row" id="sheetImportLetterboxd" hidden>
       <span>Import Letterboxd data</span>

@@ -36,7 +36,7 @@ const logo = document.querySelector('.logo');
 
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
-  'onboarding', 'wizard',
+  'wizard',
   'home', 'screening', 'library', 'account', 'trailers',
 ];
 
@@ -251,7 +251,6 @@ function renderTimeOptions(containerId, selectedHour, onChange) {
 
 $('goSignupBtn').addEventListener('click', () => show('auth-signup'));
 $('goSigninBtn').addEventListener('click', () => show('auth-signin'));
-$('guestBtn').addEventListener('click',    () => show('onboarding'));
 
 // ── Sign up ───────────────────────────────────────────────────────────────────
 
@@ -490,29 +489,25 @@ $('saveNewUsernameBtn').addEventListener('click', async () => {
   if (!username) return;
 
   $('saveNewUsernameBtn').disabled = true;
-  status.textContent = 'Checking watchlist…';
+  status.textContent = 'Saving…';
   logo.classList.add('spinning');
 
+  // The username is display-only now — the actual film data lives in
+  // user_films (populated by the Letterboxd-export import). We just
+  // PATCH the profile; no scrape verification.
   try {
-    const res  = await fetch(`${API_BASE}/watchlist/${username}`);
-    const data = await res.json();
-    if (!data.movies || data.movies.length === 0) {
-      status.textContent = 'No films found — is this watchlist public?';
-    } else {
-      await apiFetch('/api/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ letterboxd_username: username }),
-      });
-      state.username  = username;
-      state.watchlist = data.movies;
-      localStorage.setItem('ww_username',  username);
-      // No more ww_watchlist cache — refreshWatchlist() reads from user_films
-      await loadUserProfile();
-      $('accountUsername').textContent = username;
-      $('changeUsernameForm').hidden   = true;
-      $('newUsernameInput').value      = '';
-      status.textContent = '';
-    }
+    const res = await apiFetch('/api/profile', {
+      method: 'PATCH',
+      body:   JSON.stringify({ letterboxd_username: username }),
+    });
+    if (!res.ok) throw new Error('save failed');
+    state.username = username;
+    localStorage.setItem('ww_username', username);
+    await loadUserProfile();
+    $('accountUsername').textContent = username;
+    $('changeUsernameForm').hidden   = true;
+    $('newUsernameInput').value      = '';
+    status.textContent = '';
   } catch (e) {
     status.textContent = 'Something went wrong. Try again.';
   }
@@ -605,39 +600,24 @@ async function loadUserHistory() {
 }
 
 async function refreshWatchlist() {
-  // Signed-in users: source of truth is user_films (populated by the
-  // Letterboxd-export import). No scraping. Empty result = empty banner.
-  if (state.session) {
-    try {
-      const res = await apiFetch('/api/user-films');
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`/api/user-films ${res.status}: ${body.slice(0, 200)}`);
-      }
-      const films = await res.json();
-      state.watchlist = Array.isArray(films) ? films : [];
-      console.log('[watchlist] loaded', state.watchlist.length, 'films from user_films');
-      updateEmptyState();
-      return;
-    } catch (e) {
-      console.error('[watchlist] /api/user-films failed:', e);
-      // Leave state.watchlist as-is so we don't blank out a populated picker
-      // on a transient network blip. Banner re-evaluates either way.
-      updateEmptyState();
-      return;
-    }
-  }
-  // Guest path: still scrape (spec keeps /watchlist/:username for now).
-  if (!state.username) return;
+  // user_films (populated by the Letterboxd-export import) is the only
+  // film source now. No session → nothing to load (boot routes guests to
+  // auth-entry). Empty result → empty-state banner on home.
+  if (!state.session) return;
   try {
-    const res  = await fetch(`${API_BASE}/watchlist/${state.username}`);
-    const data = await res.json();
-    if (data.movies?.length) {
-      state.watchlist = data.movies;
-      console.log('[watchlist] scraped', state.watchlist.length, 'films for', state.username);
+    const res = await apiFetch('/api/user-films');
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`/api/user-films ${res.status}: ${body.slice(0, 200)}`);
     }
+    const films = await res.json();
+    state.watchlist = Array.isArray(films) ? films : [];
+    console.log('[watchlist] loaded', state.watchlist.length, 'films from user_films');
+    updateEmptyState();
   } catch (e) {
-    console.error('[watchlist] scrape failed:', e);
+    console.error('[watchlist] /api/user-films failed:', e);
+    // Leave state.watchlist as-is so a transient blip doesn't blank the picker.
+    updateEmptyState();
   }
 }
 
@@ -649,60 +629,6 @@ function updateEmptyState() {
   const shouldShow = !!state.session && (!state.watchlist || state.watchlist.length === 0);
   banner.hidden = !shouldShow;
 }
-
-// ── Guest prompt ──────────────────────────────────────────────────────────────
-
-function showGuestPrompt() {
-  if (localStorage.getItem('ww_guest_prompt_dismissed')) return;
-  const el = document.createElement('div');
-  el.className = 'guest-prompt';
-  el.innerHTML = `
-    <p class="guest-prompt-text">Create an account for cross-device history and a nightly film note curated for you.</p>
-    <div class="guest-prompt-actions">
-      <button class="btn-primary" id="guestPromptCreate"
-        style="font-size:12px; padding:10px 14px; min-height:0; letter-spacing:0.06em;">
-        Create an account
-      </button>
-      <button class="guest-prompt-dismiss" id="guestPromptDismiss">Not now</button>
-    </div>`;
-  const home = $('home');
-  home.insertBefore(el, home.querySelector('.dek').nextSibling);
-  $('guestPromptCreate').addEventListener('click',  () => { el.remove(); show('auth-signup'); });
-  $('guestPromptDismiss').addEventListener('click', () => {
-    localStorage.setItem('ww_guest_prompt_dismissed', '1');
-    el.remove();
-  });
-}
-
-// ── Onboarding (guest path) ───────────────────────────────────────────────────
-
-$('saveUsernameBtn').addEventListener('click', async () => {
-  const name = $('usernameInput').value.trim();
-  if (!name) return;
-  $('onboardStatus').textContent = 'Loading your watchlist…';
-  logo.classList.add('spinning');
-  try {
-    const res  = await fetch(`${API_BASE}/watchlist/${name}`);
-    const data = await res.json();
-    if (!data.movies || data.movies.length === 0) {
-      $('onboardStatus').textContent = 'No films found. Is the watchlist public?';
-      logo.classList.remove('spinning');
-      return;
-    }
-    state.username  = name;
-    state.watchlist = data.movies;
-    localStorage.setItem('ww_username',  name);
-    localStorage.setItem('ww_watchlist', JSON.stringify(data.movies));
-    localStorage.setItem('ww_watchlist_fetched', Date.now().toString());
-    logo.classList.remove('spinning');
-    show('home');
-    setProgrammeEyebrow();
-    showGuestPrompt();
-  } catch (e) {
-    logo.classList.remove('spinning');
-    $('onboardStatus').textContent = 'Couldn\'t reach Letterboxd. Try again?';
-  }
-});
 
 // ── Pick logic ────────────────────────────────────────────────────────────────
 
@@ -852,12 +778,9 @@ $('backBtn').addEventListener('click', () => {
 function openSheet() {
   const isSignedIn = !!state.user;
   $('sheetAccount').hidden          = !isSignedIn;
-  $('sheetChangeUser').hidden       = isSignedIn;
   $('sheetImportLetterboxd').hidden = !isSignedIn; // import only makes sense for signed-in users
   if (isSignedIn) {
     $('currentUser').textContent = state.profile?.letterboxd_username || state.user.email || '';
-  } else {
-    $('currentUserGuest').textContent = state.username || '';
   }
   $('sheetBackdrop').hidden = false;
   $('sheet').hidden         = false;
@@ -907,17 +830,6 @@ $('sheetLibrary').addEventListener('click', () => {
 });
 
 $('sheetAccount').addEventListener('click', openAccount);
-
-$('sheetChangeUser').addEventListener('click', () => {
-  closeSheet();
-  localStorage.removeItem('ww_username');
-  localStorage.removeItem('ww_watchlist');
-  state.username  = null;
-  state.watchlist = [];
-  $('usernameInput').value = '';
-  setBgWarm(false);
-  show('onboarding');
-});
 
 // ── Letterboxd import ─────────────────────────────────────────────────────────
 
@@ -1427,18 +1339,9 @@ async function boot() {
     setProgrammeEyebrow();
 
   } else {
-    // ── Guest / new visitor ──
-    if (state.username) {
-      // Returning guest with a stored Letterboxd username
-      const cached = localStorage.getItem('ww_watchlist');
-      if (cached) state.watchlist = JSON.parse(cached);
-      show('home');
-      setProgrammeEyebrow();
-      showGuestPrompt();
-      refreshWatchlist(); // background
-    } else {
-      show('auth-entry');
-    }
+    // No session → must sign in / sign up. Guest mode was removed when the
+    // scraper went away (the app is import-only now).
+    show('auth-entry');
   }
 }
 
