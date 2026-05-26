@@ -570,6 +570,33 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 }
 .trailer-lbx-link:hover { color: var(--ww-cream-dim); border-color: rgba(232,223,213,0.28); }
 
+/* Tap-to-play overlay (iOS only — IntersectionObserver-triggered autoplay
+   is blocked in iOS Safari, so we render the poster + a play button and
+   only load the iframe when the user taps). z-index 6 sits above the
+   bottom info-overlay (5) but below the mute button (10). */
+.tap-to-play {
+  position: absolute; inset: 0;
+  z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 15, 20, 0.4);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tap-play-btn {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: rgba(168, 132, 92, 0.15);
+  border: 1.5px solid rgba(168, 132, 92, 0.4);
+  color: var(--ww-cream);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.15s;
+}
+.tap-play-btn:active {
+  background: rgba(168, 132, 92, 0.3);
+  transform: scale(0.96);
+}
+.tap-play-btn svg { display: block; }
+
 /* "No trailer" annotation in meta line + full-card overlay */
 .trailer-card.trailer-no-video .trailer-card-meta::after {
   content: ' · no trailer';

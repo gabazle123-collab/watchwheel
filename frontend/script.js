@@ -1024,6 +1024,14 @@ $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyeb
 let trailerObserver = null;
 let stickyMuted     = true;
 
+// iOS Safari blocks iframe autoplay triggered by IntersectionObserver — it
+// requires a direct user tap. On iOS we render a poster + play-button
+// overlay instead, and only load the iframe on tap. Detection is the
+// standard UA check; iPadOS 13+ pretends to be Mac in the UA but the
+// previous attempt at maxTouchPoints-based detection caused false
+// positives on touch-enabled MacBooks — sticking with the spec's regex.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
 function trailerEmbedUrl(ytId) {
   // controls=0 hides the YouTube UI; modestbranding=1 removes the YouTube
   // logo; rel=0 keeps related-video overlays off; iv_load_policy=3 hides
@@ -1189,31 +1197,29 @@ function cardIsVisible(card) {
   return centre >= rRoot.top && centre <= rRoot.bottom;
 }
 
-function loadCardIframe(card) {
-  const ytId   = card.dataset.youtubeId;
-  if (!ytId) return;
+function updateMuteIcon(card, muted) {
+  const btn = card.querySelector('.trailer-mute-btn');
+  if (btn) btn.innerHTML = muteSvg(muted);
+}
+
+// Shared iframe-loading core — called either directly (desktop / Android
+// when the observer fires) or from the tap-to-play overlay's click handler
+// on iOS. Always uses the muted-URL autoplay path; if !stickyMuted, posts
+// unMute + playVideo commands 300ms after the iframe loads.
+function attachIframeSrc(card) {
   const iframe = card.querySelector('iframe');
-  if (!iframe) return;
+  const ytId   = card.dataset.youtubeId;
+  if (!iframe || !ytId) return;
   if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded
 
-  // Always start with mute=1 in the URL — guaranteed autoplay everywhere.
-  // The mute icon reflects the user's intent (stickyMuted) even though
-  // the actual audio is briefly muted until the postMessage fires below.
-  iframe.src        = trailerEmbedUrl(ytId);
+  iframe.src         = trailerEmbedUrl(ytId);
   card.dataset.muted = 'true';
-  const btn = card.querySelector('.trailer-mute-btn');
-  if (btn) btn.innerHTML = muteSvg(stickyMuted);
+  updateMuteIcon(card, stickyMuted);
 
-  // If the user has previously unmuted, send unMute + playVideo once the
-  // iframe is ready. Unmuting an already-playing video doesn't require a
-  // fresh user gesture — that's the trick that makes this work on mobile
-  // where the mute=0 URL path is blocked outright.
   if (!stickyMuted) {
     iframe.addEventListener('load', () => {
       setTimeout(() => {
-        // Re-check in case the user re-muted or scrolled away during the
-        // 300ms wait. If stickyMuted flipped back to true, abort.
-        if (stickyMuted) return;
+        if (stickyMuted) return; // user re-muted while we waited
         try {
           iframe.contentWindow?.postMessage(
             JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
@@ -1230,11 +1236,53 @@ function loadCardIframe(card) {
   }
 }
 
+function loadCardIframe(card) {
+  const ytId = card.dataset.youtubeId;
+  if (!ytId) return;
+
+  // iOS: show poster + play button. iframe.src is set only when the user
+  // actually taps, which gives the iframe a real user-gesture context and
+  // lets autoplay through.
+  if (isIOS) {
+    showTapToPlay(card);
+    return;
+  }
+
+  // Desktop / Android — fire-and-forget autoplay works directly.
+  attachIframeSrc(card);
+}
+
+function showTapToPlay(card) {
+  if (card.querySelector('.tap-to-play')) return; // already showing
+
+  const overlay = document.createElement('div');
+  overlay.className = 'tap-to-play';
+  overlay.innerHTML = `
+    <div class="tap-play-btn" aria-label="Play trailer">
+      <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+    </div>`;
+
+  overlay.addEventListener('click', () => {
+    overlay.remove();
+    attachIframeSrc(card);
+  }, { once: true });
+
+  const wrap = card.querySelector('.trailer-video-wrap');
+  if (wrap) wrap.appendChild(overlay);
+}
+
 function unloadCardIframe(card) {
   const iframe = card.querySelector('iframe');
   if (iframe && iframe.src) iframe.src = '';
-  // Drop per-card mute state — the next load re-seeds from stickyMuted
+  card.querySelector('.tap-to-play')?.remove();
   delete card.dataset.muted;
+  // On iOS, prime the card for re-entry by immediately re-showing the
+  // tap-to-play overlay. The observer will fire again on scroll-in and
+  // call loadCardIframe → showTapToPlay (which no-ops if already present),
+  // but priming it here avoids a flash of empty poster between scrolls.
+  if (isIOS) showTapToPlay(card);
 }
 
 function escAttr(s) {
@@ -1288,34 +1336,35 @@ function activateCard(card) {
   dotEls.forEach((d, i) => d.classList.toggle('active', i === idx));
 }
 
-// Per-card mute toggle. Sends a postMessage command to the iframe instead
-// of swapping src — this leaves the video playing (no autoplay-policy
-// re-trigger on mobile, no restart from 0:00). Also updates the
-// module-level stickyMuted flag so cards loaded after this tap inherit
-// the user's preference instead of starting muted all over again.
+// Per-card mute toggle. Updates sticky state + icon synchronously; sends
+// the postMessage command to the iframe only if one is loaded (on iOS the
+// iframe may still be in tap-to-play state with no src, in which case
+// flipping stickyMuted now means the next attachIframeSrc call honours
+// the new preference).
 function toggleMute(card) {
   if (!card) return;
   const iframe = card.querySelector('iframe');
-  if (!iframe || !iframe.src || !iframe.contentWindow) return;
+  if (!iframe) return;
 
-  // dataset.muted reflects the seeded state from loadCardIframe()
   const isMuted  = card.dataset.muted !== 'false';
   const newMuted = !isMuted;
 
-  iframe.contentWindow.postMessage(
-    JSON.stringify({
-      event: 'command',
-      func:  newMuted ? 'mute' : 'unMute',
-      args:  [],
-    }),
-    'https://www.youtube.com',
-  );
-
   card.dataset.muted = newMuted ? 'true' : 'false';
-  stickyMuted       = newMuted;  // ← propagate to future card loads
+  stickyMuted       = newMuted;
+  updateMuteIcon(card, newMuted);
 
-  const btn = card.querySelector('.trailer-mute-btn');
-  if (btn) btn.innerHTML = muteSvg(newMuted);
+  if (iframe.src && iframe.contentWindow) {
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({
+          event: 'command',
+          func:  newMuted ? 'mute' : 'unMute',
+          args:  [],
+        }),
+        'https://www.youtube.com',
+      );
+    } catch (_) { /* cross-origin / not ready — give up silently */ }
+  }
 }
 
 $('trailersBackBtn').addEventListener('click', () => {
