@@ -1014,23 +1014,27 @@ $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyeb
 // to send mute/unMute commands directly.
 //
 // Mute state is sticky across cards via the module-level `stickyMuted`
-// flag, mirrored onto each card as data-muted. Initial state is muted
-// (required by browser autoplay policy). The first tap of any card's
-// mute button flips stickyMuted to false; every card loaded after that
-// asks for mute=0 in the URL and is unmuted out of the gate.
+// flag, mirrored onto each card as data-muted. Every iframe is loaded
+// with mute=1 in the URL (the only autoplay variant browsers reliably
+// allow — mobile blocks mute=0 outright). If the user has previously
+// tapped unmute, an unMute + playVideo postMessage fires ~300ms after
+// iframe load. Unmuting an already-playing video doesn't require a fresh
+// user gesture, so this works on mobile where the mute=0 URL path can't.
 
 let trailerObserver = null;
 let stickyMuted     = true;
 
-function trailerEmbedUrl(ytId, muted) {
+function trailerEmbedUrl(ytId) {
   // controls=0 hides the YouTube UI; modestbranding=1 removes the YouTube
-  // logo from controls; rel=0 keeps related-video overlays off;
-  // iv_load_policy=3 hides annotations; playsinline=1 keeps iOS from going
-  // fullscreen; enablejsapi=1 lets us send postMessage mute commands.
+  // logo; rel=0 keeps related-video overlays off; iv_load_policy=3 hides
+  // annotations; playsinline=1 keeps iOS from going fullscreen;
+  // enablejsapi=1 lets us send postMessage mute commands. mute=1 is
+  // hard-coded — the always-muted autoplay path is the only one that
+  // works across mobile + desktop. Unmute happens via postMessage after
+  // load, not via a URL flag.
   return `https://www.youtube.com/embed/${ytId}` +
-    `?autoplay=1&mute=${muted ? 1 : 0}` +
-    `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1` +
-    `&enablejsapi=1`;
+    `?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0` +
+    `&iv_load_policy=3&playsinline=1&enablejsapi=1`;
 }
 
 async function renderTrailers() {
@@ -1186,48 +1190,44 @@ function cardIsVisible(card) {
 }
 
 function loadCardIframe(card) {
-  const iframe = card.querySelector('iframe');
   const ytId   = card.dataset.youtubeId;
-  if (!iframe || !ytId) return;
+  if (!ytId) return;
+  const iframe = card.querySelector('iframe');
+  if (!iframe) return;
   if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded
 
-  // Seed per-card state from the sticky setting + set URL accordingly.
-  const wantMuted = stickyMuted;
-  card.dataset.muted = wantMuted ? 'true' : 'false';
+  // Always start with mute=1 in the URL — guaranteed autoplay everywhere.
+  // The mute icon reflects the user's intent (stickyMuted) even though
+  // the actual audio is briefly muted until the postMessage fires below.
+  iframe.src        = trailerEmbedUrl(ytId);
+  card.dataset.muted = 'true';
   const btn = card.querySelector('.trailer-mute-btn');
-  if (btn) btn.innerHTML = muteSvg(wantMuted);
+  if (btn) btn.innerHTML = muteSvg(stickyMuted);
 
-  if (wantMuted) {
-    // Plain muted autoplay — works on every browser, no fallback needed.
-    iframe.src = trailerEmbedUrl(ytId, true);
-    return;
+  // If the user has previously unmuted, send unMute + playVideo once the
+  // iframe is ready. Unmuting an already-playing video doesn't require a
+  // fresh user gesture — that's the trick that makes this work on mobile
+  // where the mute=0 URL path is blocked outright.
+  if (!stickyMuted) {
+    iframe.addEventListener('load', () => {
+      setTimeout(() => {
+        // Re-check in case the user re-muted or scrolled away during the
+        // 300ms wait. If stickyMuted flipped back to true, abort.
+        if (stickyMuted) return;
+        try {
+          iframe.contentWindow?.postMessage(
+            JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
+            'https://www.youtube.com',
+          );
+          iframe.contentWindow?.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+            'https://www.youtube.com',
+          );
+          card.dataset.muted = 'false';
+        } catch (_) { /* cross-origin / not ready — give up silently */ }
+      }, 300);
+    }, { once: true });
   }
-
-  // stickyMuted = false: try mute=0 in the URL (clean unmuted autoplay on
-  // desktops that allow it). Mobile + most strict desktops will block
-  // unmuted autoplay and the video sits paused — for those, post unMute +
-  // playVideo commands once the iframe is ready. The scroll that triggered
-  // this load is a recent user gesture in the parent window, so iframe
-  // play() usually succeeds. On browsers that already played from the URL,
-  // the commands are no-ops.
-  iframe.src = trailerEmbedUrl(ytId, false);
-  iframe.addEventListener('load', () => {
-    setTimeout(() => {
-      // User may have re-muted (or scrolled away) while we waited
-      if (card.dataset.muted !== 'false') return;
-      if (!iframe.contentWindow) return;
-      try {
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
-          'https://www.youtube.com',
-        );
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
-          'https://www.youtube.com',
-        );
-      } catch (_) { /* cross-origin / not ready — give up silently */ }
-    }, 300);
-  }, { once: true });
 }
 
 function unloadCardIframe(card) {
