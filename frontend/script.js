@@ -1006,45 +1006,35 @@ function renderLibrary() {
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
 
-// ── YouTube IFrame API (loaded once globally) ─────────────────────────────────
-
-let _ytReady = false;
-const _ytQueue = [];
-
-function ensureYouTubeAPI() {
-  if (_ytReady || document.querySelector('script[src*="youtube.com/iframe_api"]')) return;
-  const s = document.createElement('script');
-  s.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(s);
-}
-
-window.onYouTubeIframeAPIReady = function () {
-  _ytReady = true;
-  _ytQueue.splice(0).forEach(fn => fn());
-};
-
-function whenYouTubeReady(fn) {
-  if (_ytReady) { fn(); return; }
-  _ytQueue.push(fn);
-  ensureYouTubeAPI();
-}
-
 // ── Trailers ──────────────────────────────────────────────────────────────────
+//
+// Architecture: raw <iframe> per card, src set/cleared by an
+// IntersectionObserver at 0.3 threshold. No YouTube IFrame API — we trade
+// smooth mute toggle for fewer moving parts (no postMessage errors, no
+// script-load wait, no player lifecycle). Mute toggle reloads the iframe
+// src with a different mute= param, which restarts the video from 0:00.
 
 let trailerObserver = null;
 let trailerMuted    = true;
+
+function trailerEmbedUrl(ytId, muted) {
+  // controls=0 hides the YouTube UI; modestbranding=1 removes the YouTube
+  // logo from controls; rel=0 keeps related-video overlays off; iv_load_policy=3
+  // hides annotations; playsinline=1 keeps iOS from going fullscreen.
+  return `https://www.youtube.com/embed/${ytId}` +
+    `?autoplay=1&mute=${muted ? 1 : 0}` +
+    `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1`;
+}
 
 async function renderTrailers() {
   const feed   = $('trailerFeed');
   const dots   = $('trailerDots');
   const status = $('trailerStatus');
 
-  // Teardown previous observer
+  // Teardown previous observer + clear any in-flight iframes
   if (trailerObserver) { trailerObserver.disconnect(); trailerObserver = null; }
+  feed.querySelectorAll('iframe').forEach(f => { f.src = ''; });
   trailerMuted = true;
-
-  // Kick off YT API loading in the background
-  ensureYouTubeAPI();
 
   if (!state.watchlist || state.watchlist.length === 0) {
     feed.innerHTML = `
@@ -1060,13 +1050,22 @@ async function renderTrailers() {
   // Randomised subset of up to 20 films — fresh feel each visit
   const pool = state.watchlist.slice().sort(() => Math.random() - 0.5).slice(0, 20);
 
-  // Skeleton cards render immediately so the screen feels instant
+  // Cards render with an empty-src <iframe> + a "No trailer available" overlay
+  // that's hidden by default. After /trailers/batch resolves, cards with a
+  // null youtube_id get .trailer-no-video, which shows the overlay and hides
+  // the iframe via CSS. Cards in the .trailer-skeleton state stay shimmery
+  // until either path stamps them.
   feed.innerHTML = pool.map((m, i) => `
     <div class="trailer-card trailer-skeleton"
          data-film-url="${escAttr(m.url)}"
          data-film-index="${i}">
-      <div class="trailer-poster-bg"></div>
-      <div class="trailer-video-wrap"><div class="trailer-slot"></div></div>
+      <div class="trailer-poster-bg"${m.poster ? ` style="background-image:url(${escAttr(m.poster)});"` : ''}></div>
+      <div class="trailer-video-wrap">
+        <iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+      </div>
+      <div class="trailer-no-trailer-overlay">
+        <span class="trailer-no-trailer-text">No trailer available</span>
+      </div>
       <button class="trailer-mute-btn" aria-label="Toggle mute">${muteSvg(true)}</button>
       <div class="trailer-info-overlay">
         <h3 class="trailer-card-title">${italiciseTitle(m.title)}</h3>
@@ -1096,9 +1095,6 @@ async function renderTrailers() {
     btn.addEventListener('click', e => { e.stopPropagation(); toggleMute(); });
   });
 
-  // Start observing immediately — activates first card once data arrives
-  initTrailerObserver();
-
   // Split: films we already have a youtube_id for (from the TMDB import)
   // can be stamped without hitting the backend at all. The rest fall
   // through to /trailers/batch which checks film_metadata_cache + YouTube.
@@ -1122,10 +1118,9 @@ async function renderTrailers() {
     `[trailers] pool=${pool.length} from import=${known.size} need lookup=${needLookup.length}`
   );
 
-  // Activate the top card now if it's a known one — gets playback started
-  // while any lookups are in flight.
-  const firstCard = feed.querySelector('.trailer-card');
-  if (firstCard?.dataset.youtubeId) activateCard(firstCard);
+  // Start observing now — the observer will load iframes for any card with
+  // a youtube_id once it intersects (including any we just stamped).
+  initTrailerObserver();
 
   // No films need a lookup → skip the network round-trip entirely.
   if (needLookup.length === 0) {
@@ -1155,11 +1150,12 @@ async function renderTrailers() {
       if (!ytId) card.classList.add('trailer-no-video');
     });
 
-    // If the top card wasn't activated above (because it was waiting on a
-    // lookup), do it now.
-    if (firstCard && !firstCard._ytPlayer && firstCard.dataset.youtubeId) {
-      activateCard(firstCard);
-    }
+    // The observer may have already fired for visible cards before they had
+    // a youtube_id. Sweep visible-and-stamped cards to make sure their
+    // iframe.src got set.
+    feed.querySelectorAll('.trailer-card').forEach(card => {
+      if (card.dataset.youtubeId && cardIsVisible(card)) loadCardIframe(card);
+    });
 
     status.textContent = quotaHit ? 'Daily trailer quota reached — try again tomorrow.' : '';
   } catch (e) {
@@ -1168,6 +1164,29 @@ async function renderTrailers() {
   } finally {
     logo.classList.remove('spinning');
   }
+}
+
+function cardIsVisible(card) {
+  // Cheap check: cards are 100% viewport-height with scroll-snap, so we just
+  // ask whether the card's centre is anywhere inside its scrolling parent.
+  const root = $('trailerFeed');
+  const rRoot = root.getBoundingClientRect();
+  const rCard = card.getBoundingClientRect();
+  const centre = rCard.top + rCard.height / 2;
+  return centre >= rRoot.top && centre <= rRoot.bottom;
+}
+
+function loadCardIframe(card) {
+  const iframe = card.querySelector('iframe');
+  const ytId   = card.dataset.youtubeId;
+  if (!iframe || !ytId) return;
+  if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded with this id+mute combo
+  iframe.src = trailerEmbedUrl(ytId, trailerMuted);
+}
+
+function unloadCardIframe(card) {
+  const iframe = card.querySelector('iframe');
+  if (iframe && iframe.src) iframe.src = '';
 }
 
 function escAttr(s) {
@@ -1187,107 +1206,60 @@ function muteSvg(muted) {
        </svg>`;
 }
 
+// IntersectionObserver at 0.3 — cards begin loading their iframe before
+// they've fully snapped into view, so by the time the snap completes the
+// video is already playing. Below 0.3, the iframe is unloaded to free
+// memory and stop background playback.
 function initTrailerObserver() {
   if (trailerObserver) trailerObserver.disconnect();
-  const feed = $('trailerFeed');
+  const feed  = $('trailerFeed');
   const items = [...feed.querySelectorAll('.trailer-card, .trailer-end-card')];
   trailerObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
-      if (entry.intersectionRatio >= 0.6) activateCard(entry.target);
+      const card = entry.target;
+      if (entry.isIntersecting) {
+        // Card is ≥30% visible — load iframe + update dots
+        if (!card.classList.contains('trailer-end-card')) {
+          loadCardIframe(card);
+        }
+        activateCard(card);
+      } else {
+        // Card scrolled out — unload iframe to free memory + stop playback
+        unloadCardIframe(card);
+      }
     });
-  }, { root: feed, threshold: 0.6 });
+  }, { root: feed, threshold: 0.3 });
   items.forEach(el => trailerObserver.observe(el));
 }
 
+// Just dots + lifecycle accounting now — iframe lifecycle is the observer's job.
 function activateCard(card) {
-  const feed     = $('trailerFeed');
   const dotEls   = [...$('trailerDots').querySelectorAll('.trailer-dot')];
-  const allItems = [...feed.querySelectorAll('.trailer-card, .trailer-end-card')];
+  const allItems = [...$('trailerFeed').querySelectorAll('.trailer-card, .trailer-end-card')];
   const idx      = allItems.indexOf(card);
-
-  // Update progress dots
   dotEls.forEach((d, i) => d.classList.toggle('active', i === idx));
-
-  // Manage iframe lifecycle — load active ±1, unload distant
-  allItems.forEach((c, i) => {
-    if (c.classList.contains('trailer-end-card')) return;
-    if (Math.abs(i - idx) <= 1) loadTrailerIframe(c);
-    else                        unloadTrailerIframe(c);
-  });
-
-  // Autoplay the active card's player
-  const p = card._ytPlayer;
-  if (p) {
-    try { p.playVideo(); trailerMuted ? p.mute() : p.unMute(); } catch (_) {}
-  }
-
-  // Pause all other cards
-  allItems.forEach(c => {
-    if (c === card || !c._ytPlayer) return;
-    try { c._ytPlayer.pauseVideo(); } catch (_) {}
-  });
 }
 
-function loadTrailerIframe(card) {
-  if (card._ytPlayer || card._ytLoading) return;
-  const ytId = card.dataset.youtubeId;
-  if (!ytId) return;
-  if (!card.querySelector('.trailer-slot')) return;
-  card._ytLoading = true;
-  whenYouTubeReady(() => {
-    card._ytLoading = false;
-    if (card._ytPlayer) return;
-    const target = card.querySelector('.trailer-slot');
-    if (!target) return; // was unloaded while waiting
-    card._ytPlayer = new window.YT.Player(target, {
-      videoId: ytId,
-      playerVars: {
-        autoplay: 1, mute: 1, controls: 0,
-        modestbranding: 1, rel: 0, playsinline: 1, enablejsapi: 1,
-      },
-      events: {
-        onReady(e) {
-          e.target.playVideo();
-          if (!trailerMuted) e.target.unMute();
-        },
-        onError() { card.classList.add('trailer-no-video'); },
-      },
-    });
-  });
-}
-
-function unloadTrailerIframe(card) {
-  card._ytLoading = false;
-  if (!card._ytPlayer) return;
-  try { card._ytPlayer.destroy(); } catch (_) {}
-  card._ytPlayer = null;
-  // Recreate the slot so the next loadTrailerIframe() has a target
-  const wrap = card.querySelector('.trailer-video-wrap');
-  if (wrap) {
-    const slot = document.createElement('div');
-    slot.className = 'trailer-slot';
-    wrap.appendChild(slot);
-  }
-}
-
+// Mute toggle. The IFrame API is gone, so we mute by reloading the iframe
+// with a different mute= param. This restarts the video from 0:00 — a
+// known trade-off in exchange for dropping the IFrame API entirely.
 function toggleMute() {
   trailerMuted = !trailerMuted;
-  const feed = $('trailerFeed');
-  // Apply to all loaded players
-  feed.querySelectorAll('.trailer-card').forEach(c => {
-    if (!c._ytPlayer) return;
-    try { trailerMuted ? c._ytPlayer.mute() : c._ytPlayer.unMute(); } catch (_) {}
+  $('trailerFeed').querySelectorAll('.trailer-card').forEach(card => {
+    const iframe = card.querySelector('iframe');
+    const ytId   = card.dataset.youtubeId;
+    if (!iframe || !ytId || !iframe.src) return;
+    iframe.src = trailerEmbedUrl(ytId, trailerMuted);
   });
-  // Update all mute button icons
-  feed.querySelectorAll('.trailer-mute-btn').forEach(btn => {
+  $('trailerFeed').querySelectorAll('.trailer-mute-btn').forEach(btn => {
     btn.innerHTML = muteSvg(trailerMuted);
   });
 }
 
 $('trailersBackBtn').addEventListener('click', () => {
-  // Teardown observer and destroy all active players
   if (trailerObserver) { trailerObserver.disconnect(); trailerObserver = null; }
-  $('trailerFeed').querySelectorAll('.trailer-card').forEach(unloadTrailerIframe);
+  // Clear every iframe so audio stops and we drop memory cleanly
+  $('trailerFeed').querySelectorAll('iframe').forEach(f => { f.src = ''; });
   show('home');
   setProgrammeEyebrow();
 });

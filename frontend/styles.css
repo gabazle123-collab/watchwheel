@@ -570,10 +570,32 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 }
 .trailer-lbx-link:hover { color: var(--ww-cream-dim); border-color: rgba(232,223,213,0.28); }
 
-/* "No trailer" annotation in meta line */
+/* "No trailer" annotation in meta line + full-card overlay */
 .trailer-card.trailer-no-video .trailer-card-meta::after {
   content: ' · no trailer';
   opacity: 0.55;
+}
+/* Hide the iframe entirely on no-trailer cards so the overlay reads cleanly */
+.trailer-card.trailer-no-video .trailer-video-wrap { display: none; }
+
+.trailer-no-trailer-overlay {
+  position: absolute; inset: 0;
+  z-index: 4;
+  display: none;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.trailer-card.trailer-no-video .trailer-no-trailer-overlay { display: flex; }
+
+.trailer-no-trailer-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ww-cream-dim);
+  background: rgba(10, 15, 20, 0.72);
+  padding: 10px 20px;
+  border-radius: 22px;
+  letter-spacing: 0.02em;
 }
 
 /* Skeleton shimmer */
