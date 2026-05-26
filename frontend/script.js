@@ -1013,23 +1013,21 @@ $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyeb
 // we just enable JS commands via enablejsapi=1 and use window.postMessage
 // to send mute/unMute commands directly.
 //
-// Mute state is sticky across cards via the module-level `stickyMuted`
-// flag, mirrored onto each card as data-muted. Every iframe is loaded
-// with mute=1 in the URL (the only autoplay variant browsers reliably
-// allow — mobile blocks mute=0 outright). If the user has previously
-// tapped unmute, an unMute + playVideo postMessage fires ~300ms after
-// iframe load. Unmuting an already-playing video doesn't require a fresh
-// user gesture, so this works on mobile where the mute=0 URL path can't.
+// Mute model: PER-CARD, NOT sticky. Every card autoplays muted (mute=1
+// in URL — the only variant browsers reliably allow). The mute toggle
+// flips audio on the current card via postMessage. The next card starts
+// muted again. Earlier versions tried to carry the unmute preference
+// forward via a post-load postMessage unMute, but on iOS that timing
+// fights the autoplay policy and broke playback entirely — better UX
+// to make the user re-tap unmute per card than to break video starts.
+//
+// iOS Safari additionally blocks iframe autoplay triggered by
+// IntersectionObserver (it requires a direct user tap). On iOS we render
+// a poster + play-button overlay and only load the iframe on tap;
+// desktop / Android keep the auto-load-on-scroll behaviour.
 
 let trailerObserver = null;
-let stickyMuted     = true;
 
-// iOS Safari blocks iframe autoplay triggered by IntersectionObserver — it
-// requires a direct user tap. On iOS we render a poster + play-button
-// overlay instead, and only load the iframe on tap. Detection is the
-// standard UA check; iPadOS 13+ pretends to be Mac in the UA but the
-// previous attempt at maxTouchPoints-based detection caused false
-// positives on touch-enabled MacBooks — sticking with the spec's regex.
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
 function trailerEmbedUrl(ytId) {
@@ -1204,8 +1202,9 @@ function updateMuteIcon(card, muted) {
 
 // Shared iframe-loading core — called either directly (desktop / Android
 // when the observer fires) or from the tap-to-play overlay's click handler
-// on iOS. Always uses the muted-URL autoplay path; if !stickyMuted, posts
-// unMute + playVideo commands 300ms after the iframe loads.
+// on iOS. Always loads muted; if the user wants audio they tap the mute
+// button after load, which sends a postMessage unMute (works because the
+// video is already playing — no autoplay-policy interaction).
 function attachIframeSrc(card) {
   const iframe = card.querySelector('iframe');
   const ytId   = card.dataset.youtubeId;
@@ -1214,26 +1213,7 @@ function attachIframeSrc(card) {
 
   iframe.src         = trailerEmbedUrl(ytId);
   card.dataset.muted = 'true';
-  updateMuteIcon(card, stickyMuted);
-
-  if (!stickyMuted) {
-    iframe.addEventListener('load', () => {
-      setTimeout(() => {
-        if (stickyMuted) return; // user re-muted while we waited
-        try {
-          iframe.contentWindow?.postMessage(
-            JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
-            'https://www.youtube.com',
-          );
-          iframe.contentWindow?.postMessage(
-            JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
-            'https://www.youtube.com',
-          );
-          card.dataset.muted = 'false';
-        } catch (_) { /* cross-origin / not ready — give up silently */ }
-      }, 300);
-    }, { once: true });
-  }
+  updateMuteIcon(card, true);
 }
 
 function loadCardIframe(card) {
@@ -1336,11 +1316,11 @@ function activateCard(card) {
   dotEls.forEach((d, i) => d.classList.toggle('active', i === idx));
 }
 
-// Per-card mute toggle. Updates sticky state + icon synchronously; sends
-// the postMessage command to the iframe only if one is loaded (on iOS the
-// iframe may still be in tap-to-play state with no src, in which case
-// flipping stickyMuted now means the next attachIframeSrc call honours
-// the new preference).
+// Per-card mute toggle. Affects only this card — no carry-forward to
+// other cards in the feed. The next card the user scrolls to will start
+// muted again and they'll need to re-tap unmute if they want audio there.
+// (Earlier sticky-mute attempts broke iOS playback; per-card is the
+// stable path across every browser.)
 function toggleMute(card) {
   if (!card) return;
   const iframe = card.querySelector('iframe');
@@ -1350,7 +1330,6 @@ function toggleMute(card) {
   const newMuted = !isMuted;
 
   card.dataset.muted = newMuted ? 'true' : 'false';
-  stickyMuted       = newMuted;
   updateMuteIcon(card, newMuted);
 
   if (iframe.src && iframe.contentWindow) {
