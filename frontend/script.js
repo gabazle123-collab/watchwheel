@@ -1009,21 +1009,29 @@ $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyeb
 // ── Trailers ──────────────────────────────────────────────────────────────────
 //
 // Architecture: raw <iframe> per card, src set/cleared by an
-// IntersectionObserver at 0.3 threshold. No YouTube IFrame API — we trade
-// smooth mute toggle for fewer moving parts (no postMessage errors, no
-// script-load wait, no player lifecycle). Mute toggle reloads the iframe
-// src with a different mute= param, which restarts the video from 0:00.
+// IntersectionObserver at 0.3 threshold. No YouTube IFrame API SDK loaded —
+// we just enable JS commands via enablejsapi=1 and use window.postMessage
+// to send mute/unMute commands directly. This is NOT the IFrame API
+// (which would require loading youtube.com/iframe_api as a script and
+// produced the postMessage console warnings we removed) — it's just the
+// URL flag that lets the embed accept command messages.
+//
+// Mute state is per-card via card.dataset.muted. Every iframe loads
+// muted (browser autoplay policy requires it); the user can unmute via
+// the mute button, which sends a command instead of swapping src — so
+// playback isn't interrupted on mobile.
 
 let trailerObserver = null;
-let trailerMuted    = true;
 
-function trailerEmbedUrl(ytId, muted) {
+function trailerEmbedUrl(ytId) {
   // controls=0 hides the YouTube UI; modestbranding=1 removes the YouTube
-  // logo from controls; rel=0 keeps related-video overlays off; iv_load_policy=3
-  // hides annotations; playsinline=1 keeps iOS from going fullscreen.
+  // logo from controls; rel=0 keeps related-video overlays off;
+  // iv_load_policy=3 hides annotations; playsinline=1 keeps iOS from going
+  // fullscreen; enablejsapi=1 lets us send postMessage mute commands.
   return `https://www.youtube.com/embed/${ytId}` +
-    `?autoplay=1&mute=${muted ? 1 : 0}` +
-    `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1`;
+    `?autoplay=1&mute=1` +
+    `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1` +
+    `&enablejsapi=1`;
 }
 
 async function renderTrailers() {
@@ -1034,7 +1042,6 @@ async function renderTrailers() {
   // Teardown previous observer + clear any in-flight iframes
   if (trailerObserver) { trailerObserver.disconnect(); trailerObserver = null; }
   feed.querySelectorAll('iframe').forEach(f => { f.src = ''; });
-  trailerMuted = true;
 
   if (!state.watchlist || state.watchlist.length === 0) {
     feed.innerHTML = `
@@ -1090,9 +1097,12 @@ async function renderTrailers() {
   const endBtn = $('trailerEndHome');
   if (endBtn) endBtn.addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
 
-  // Wire mute buttons (per card — tap toggles globally)
+  // Wire mute buttons — each tap toggles the audio on its own card only
   feed.querySelectorAll('.trailer-mute-btn').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); toggleMute(); });
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleMute(btn.closest('.trailer-card'));
+    });
   });
 
   // Split: films we already have a youtube_id for (from the TMDB import)
@@ -1180,13 +1190,19 @@ function loadCardIframe(card) {
   const iframe = card.querySelector('iframe');
   const ytId   = card.dataset.youtubeId;
   if (!iframe || !ytId) return;
-  if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded with this id+mute combo
-  iframe.src = trailerEmbedUrl(ytId, trailerMuted);
+  if (iframe.src.includes(`/embed/${ytId}`)) return; // already loaded
+  iframe.src = trailerEmbedUrl(ytId);
+  // Fresh load is always muted — reset per-card state + icon to match
+  delete card.dataset.muted;
+  const btn = card.querySelector('.trailer-mute-btn');
+  if (btn) btn.innerHTML = muteSvg(true);
 }
 
 function unloadCardIframe(card) {
   const iframe = card.querySelector('iframe');
   if (iframe && iframe.src) iframe.src = '';
+  // Drop per-card mute state so the next load starts cleanly from muted
+  delete card.dataset.muted;
 }
 
 function escAttr(s) {
@@ -1240,20 +1256,29 @@ function activateCard(card) {
   dotEls.forEach((d, i) => d.classList.toggle('active', i === idx));
 }
 
-// Mute toggle. The IFrame API is gone, so we mute by reloading the iframe
-// with a different mute= param. This restarts the video from 0:00 — a
-// known trade-off in exchange for dropping the IFrame API entirely.
-function toggleMute() {
-  trailerMuted = !trailerMuted;
-  $('trailerFeed').querySelectorAll('.trailer-card').forEach(card => {
-    const iframe = card.querySelector('iframe');
-    const ytId   = card.dataset.youtubeId;
-    if (!iframe || !ytId || !iframe.src) return;
-    iframe.src = trailerEmbedUrl(ytId, trailerMuted);
-  });
-  $('trailerFeed').querySelectorAll('.trailer-mute-btn').forEach(btn => {
-    btn.innerHTML = muteSvg(trailerMuted);
-  });
+// Per-card mute toggle. Sends a postMessage command to the iframe instead
+// of swapping src — this leaves the video playing (no autoplay-policy
+// re-trigger on mobile, no restart from 0:00).
+function toggleMute(card) {
+  if (!card) return;
+  const iframe = card.querySelector('iframe');
+  if (!iframe || !iframe.src || !iframe.contentWindow) return;
+
+  // dataset.muted defaults to 'true' (the URL has mute=1 on every load)
+  const isMuted = card.dataset.muted !== 'false';
+
+  iframe.contentWindow.postMessage(
+    JSON.stringify({
+      event: 'command',
+      func:  isMuted ? 'unMute' : 'mute',
+      args:  [],
+    }),
+    'https://www.youtube.com',
+  );
+
+  card.dataset.muted = isMuted ? 'false' : 'true';
+  const btn = card.querySelector('.trailer-mute-btn');
+  if (btn) btn.innerHTML = muteSvg(!isMuted);
 }
 
 $('trailersBackBtn').addEventListener('click', () => {
