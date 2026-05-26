@@ -1110,3 +1110,208 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   transition: color 0.2s;
 }
 .empty-import-btn:hover { color: var(--ww-amber-bright); }
+
+/* ── Explore (TMDB-backed discovery) ───────────────────────────────────── */
+
+.explore-search {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--ww-border-strong);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 18px 0 14px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ww-cream-dim);
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.explore-search::placeholder {
+  color: var(--ww-taupe-dim);
+  font-style: italic;
+}
+.explore-search:focus {
+  outline: none;
+  border-color: var(--ww-amber);
+  background: rgba(168, 132, 92, 0.04);
+}
+/* Hide the iOS clear (×) button — looks out of place with our palette */
+.explore-search::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.explore-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  transition: opacity 0.2s;
+}
+.explore-mode-toggle.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.explore-mode-btn {
+  background: transparent;
+  border: 1px solid var(--ww-border);
+  color: var(--ww-taupe);
+  padding: 7px 14px;
+  border-radius: 16px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.explore-mode-btn.active {
+  color: var(--ww-amber-text);
+  border-color: var(--ww-amber);
+  background: rgba(168, 132, 92, 0.08);
+}
+
+.explore-decades {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 18px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.explore-decades::-webkit-scrollbar { display: none; }
+
+.explore-chip {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--ww-border);
+  color: var(--ww-taupe-dim);
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.explore-chip.active {
+  color: var(--ww-cream);
+  border-color: rgba(232, 223, 213, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.explore-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.explore-card {
+  display: flex;
+  gap: 12px;
+  background: var(--ww-surface);
+  border: 1px solid var(--ww-border);
+  border-radius: 10px;
+  padding: 12px;
+  align-items: flex-start;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.explore-poster {
+  flex-shrink: 0;
+  width: 64px; height: 96px;
+  border-radius: 4px;
+  background: var(--ww-bg-mid);
+  background-size: cover;
+  background-position: center;
+}
+
+.explore-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.explore-card-title {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ww-cream);
+  line-height: 1.3;
+  margin-bottom: 3px;
+}
+.explore-card-title em {
+  font-style: italic;
+  color: var(--ww-amber-bright);
+}
+
+.explore-card-meta {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ww-taupe-dim);
+  margin-bottom: 7px;
+}
+
+.explore-card-overview {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--ww-cream-muted);
+  line-height: 1.5;
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.explore-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.explore-add-btn {
+  background: rgba(168, 132, 92, 0.10);
+  border: 1px solid rgba(168, 132, 92, 0.5);
+  color: var(--ww-amber-text);
+  padding: 7px 12px;
+  border-radius: 14px;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.explore-add-btn:hover {
+  background: rgba(168, 132, 92, 0.18);
+  color: var(--ww-cream);
+}
+.explore-add-btn.added,
+.explore-add-btn[disabled] {
+  background: transparent;
+  border-color: var(--ww-border-strong);
+  color: var(--ww-taupe);
+  cursor: default;
+}
+.explore-add-btn.added:hover { background: transparent; color: var(--ww-taupe); }
+
+.explore-lbx-link {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ww-taupe);
+  text-decoration: none;
+  padding: 6px 8px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s;
+}
+.explore-lbx-link:hover { color: var(--ww-cream-dim); }

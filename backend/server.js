@@ -738,6 +738,166 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
   res.json(films);
 });
 
+// ─── Explore (TMDB-backed film discovery) ────────────────────────────────────
+//
+// Three modes drive a single endpoint:
+//   /api/explore?mode=trending                  → trending this week
+//   /api/explore?mode=top_rated                 → all-time top rated
+//   /api/explore?mode=search&q=parasite         → search by title
+//   /api/explore?mode=discover&decade=1990      → filtered discover
+// Plus POST /api/user-films/add for the "+ Add to watchlist" action.
+
+async function tmdbFetch(path, params = {}) {
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) {
+    console.error('[explore] TMDB_API_KEY not set');
+    return { error: 'TMDB not configured', status: 503 };
+  }
+  const q = new URLSearchParams({ ...params, api_key: apiKey });
+  try {
+    const res = await axios.get(`https://api.themoviedb.org/3${path}?${q}`, {
+      validateStatus: () => true,
+      timeout: 10000,
+    });
+    if (res.status !== 200) return { error: `TMDB ${res.status}`, status: res.status };
+    return { data: res.data };
+  } catch (e) {
+    console.error('[explore] tmdb network error:', e.message);
+    return { error: e.message, status: 500 };
+  }
+}
+
+// Shape a TMDB list-style result into the explore-card contract the
+// frontend expects. Note: list endpoints (trending/discover/search) don't
+// return runtime or videos — those only come from /movie/:id, fetched at
+// add-time inside /api/user-films/add.
+function shapeTmdbCard(t) {
+  if (!t || !t.id) return null;
+  return {
+    tmdb_id:        t.id,
+    title:          t.title || t.original_title || 'Untitled',
+    year:           t.release_date ? Number(t.release_date.slice(0, 4)) : null,
+    poster_url:     t.poster_path
+      ? `https://image.tmdb.org/t/p/w342${t.poster_path}` : null,
+    overview:       t.overview || '',
+    vote_average:   typeof t.vote_average === 'number'
+      ? Math.round(t.vote_average * 10) / 10 : null,
+    // Letterboxd has a stable redirect at letterboxd.com/tmdb/<id> that
+    // resolves to the film page — used both for the "Also on Letterboxd"
+    // link on the card and as the user_films.letterboxd_url on add.
+    letterboxd_url: `https://letterboxd.com/tmdb/${t.id}/`,
+  };
+}
+
+app.get('/api/explore', requireAuth, async (req, res) => {
+  const mode = (req.query.mode || 'trending').toString();
+  const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+
+  let result;
+  if (mode === 'search') {
+    const q = (req.query.q || '').toString().trim();
+    if (!q) return res.json({ films: [], page });
+    result = await tmdbFetch('/search/movie', { query: q, page, include_adult: 'false' });
+  } else if (mode === 'top_rated') {
+    result = await tmdbFetch('/movie/top_rated', { page });
+  } else if (mode === 'discover') {
+    const params = {
+      page,
+      sort_by:        'popularity.desc',
+      'vote_count.gte': 100,        // skip obscure films with <100 votes
+      include_adult:  'false',
+    };
+    const decade = parseInt(req.query.decade || '', 10);
+    if (decade) {
+      params['primary_release_date.gte'] = `${decade}-01-01`;
+      params['primary_release_date.lte'] = `${decade + 9}-12-31`;
+    }
+    if (req.query.genre) params.with_genres = req.query.genre.toString();
+    result = await tmdbFetch('/discover/movie', params);
+  } else {
+    // default: trending this week
+    result = await tmdbFetch('/trending/movie/week', { page });
+  }
+
+  if (result.error) {
+    return res.status(result.status || 500).json({ error: result.error });
+  }
+
+  const cards = (result.data?.results || []).map(shapeTmdbCard).filter(Boolean);
+
+  // Annotate films already in the user's watchlist so the frontend can
+  // render "+ Add" vs "✓ In watchlist" without an extra round-trip.
+  const tmdbIds = cards.map(c => c.tmdb_id);
+  let inWatchlist = new Set();
+  if (tmdbIds.length > 0) {
+    const { data } = await supabase
+      .from('user_films')
+      .select('tmdb_id')
+      .eq('user_id', req.user.id)
+      .in('tmdb_id', tmdbIds);
+    inWatchlist = new Set((data || []).map(r => r.tmdb_id));
+  }
+
+  const films = cards.map(c => ({ ...c, in_watchlist: inWatchlist.has(c.tmdb_id) }));
+  res.json({ films, page });
+});
+
+// POST /api/user-films/add  body: { tmdb_id: 12345 }
+// Adds a single film to the user's watchlist. Fetches full TMDB details
+// (including videos for the trailer key) so the picker + trailers feed
+// have everything they need without a follow-up backfill.
+app.post('/api/user-films/add', requireAuth, async (req, res) => {
+  const tmdbId = parseInt(req.body?.tmdb_id, 10);
+  if (!tmdbId) return res.status(400).json({ error: 'tmdb_id required' });
+
+  // App-level dedup on (user_id, tmdb_id). The existing unique index is on
+  // (user_id, letterboxd_url) which won't catch this case — a film added
+  // via Explore (tmdb-style URL) and the same film imported from
+  // Letterboxd (slug-style URL) are different URLs for the same row.
+  const { data: existing } = await supabase
+    .from('user_films')
+    .select('id')
+    .eq('user_id', req.user.id)
+    .eq('tmdb_id', tmdbId)
+    .maybeSingle();
+  if (existing) return res.json({ ok: true, already_in_watchlist: true });
+
+  const details = await tmdbFetch(`/movie/${tmdbId}`, { append_to_response: 'videos' });
+  if (details.error) {
+    return res.status(details.status || 500).json({ error: details.error });
+  }
+  const d = details.data;
+  if (!d?.title) return res.status(404).json({ error: 'Film not found on TMDB' });
+
+  const trailer =
+    d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
+    d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
+    d.videos?.results?.find(v => v.site === 'YouTube');
+
+  const row = {
+    user_id:         req.user.id,
+    title:           d.title,
+    year:            d.release_date ? parseInt(d.release_date.slice(0, 4), 10) : null,
+    letterboxd_url:  `https://letterboxd.com/tmdb/${tmdbId}/`,
+    tmdb_id:         tmdbId,
+    poster_url:      d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
+    runtime_minutes: d.runtime || null,
+    synopsis:        d.overview || null,
+    genres:          (d.genres || []).map(g => g.name),
+    youtube_id:      trailer?.key || null,
+    status:          'ready',
+    added_via:       'explore',
+  };
+
+  const { error } = await supabase.from('user_films').insert(row);
+  if (error) {
+    console.error('[user-films/add] insert failed:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  console.log(`[user-films/add] ${req.user.id} → tmdb:${tmdbId} (${d.title})`);
+  res.json({ ok: true, added: true });
+});
+
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
 app.get('/api/unsubscribe', async (req, res) => {
   const { uid } = req.query;

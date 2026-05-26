@@ -37,7 +37,7 @@ const logo = document.querySelector('.logo');
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
   'wizard', 'import',
-  'home', 'screening', 'library', 'account', 'trailers',
+  'home', 'screening', 'library', 'account', 'trailers', 'explore',
 ];
 
 function show(screenId) {
@@ -55,7 +55,7 @@ function show(screenId) {
 
 // ── Bottom nav ────────────────────────────────────────────────────────────────
 
-const NAV_SCREENS = ['home', 'trailers', 'library'];
+const NAV_SCREENS = ['home', 'trailers', 'library', 'explore'];
 
 function showBottomNav(screenId) {
   const nav = $('bottomNav');
@@ -807,6 +807,10 @@ document.querySelectorAll('#bottomNav .nav-item').forEach(item => {
       setBgWarm(false);
       renderLibrary();
       show('library');
+    } else if (target === 'explore') {
+      setBgWarm(false);
+      renderExplore();
+      show('explore');
     }
   });
 });
@@ -1016,6 +1020,185 @@ function renderLibrary() {
 }
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
+
+// ── Explore (TMDB discovery) ──────────────────────────────────────────────────
+//
+// State machine: search > decade > mode.
+//   • Query in the search box  → always wins (TMDB /search/movie)
+//   • Else decade chip != Any  → /discover with primary_release_date range
+//   • Else mode toggle         → /trending/movie/week  or  /movie/top_rated
+// Each user action calls fetchExploreResults() which re-derives the request.
+
+const exploreState = {
+  mode:    'trending',   // 'trending' | 'top_rated'
+  query:   '',
+  decade:  '',           // '' = any, else 4-digit decade start ("1990")
+  loading: false,
+};
+let exploreSearchTimer = null;
+
+function renderExplore() {
+  // Reset on each entry so the screen feels fresh
+  exploreState.mode   = 'trending';
+  exploreState.query  = '';
+  exploreState.decade = '';
+  $('exploreSearch').value = '';
+  $('exploreModeToggle').classList.remove('disabled');
+  $('exploreModeToggle').querySelectorAll('.explore-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === 'trending');
+  });
+  $('exploreDecades').querySelectorAll('.explore-chip').forEach(c => {
+    c.classList.toggle('active', !c.dataset.decade);
+  });
+  $('exploreResults').innerHTML = '';
+  fetchExploreResults();
+}
+
+async function fetchExploreResults() {
+  if (exploreState.loading) return;
+  exploreState.loading = true;
+
+  const status  = $('exploreStatus');
+  const results = $('exploreResults');
+  status.textContent = 'Loading…';
+  logo.classList.add('spinning');
+
+  // Build the right query — search > decade > mode (see state-machine note above)
+  const params = new URLSearchParams();
+  if (exploreState.query) {
+    params.set('mode', 'search');
+    params.set('q', exploreState.query);
+  } else if (exploreState.decade) {
+    params.set('mode', 'discover');
+    params.set('decade', exploreState.decade);
+  } else {
+    params.set('mode', exploreState.mode);
+  }
+
+  try {
+    const res = await apiFetch(`/api/explore?${params}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`/api/explore ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    renderExploreResults(data.films || []);
+    status.textContent = (data.films || []).length === 0
+      ? (exploreState.query ? 'No films match that search.' : 'No films to show.')
+      : '';
+  } catch (e) {
+    console.error('[explore] fetch failed:', e);
+    results.innerHTML = '';
+    status.textContent = "Couldn't load Explore. Try again?";
+  } finally {
+    logo.classList.remove('spinning');
+    exploreState.loading = false;
+  }
+}
+
+function renderExploreResults(films) {
+  const results = $('exploreResults');
+  if (films.length === 0) { results.innerHTML = ''; return; }
+
+  results.innerHTML = films.map(f => {
+    const meta = [f.year || '—'];
+    if (typeof f.vote_average === 'number') meta.push(`★ ${f.vote_average}`);
+    return `
+      <div class="explore-card" data-tmdb-id="${f.tmdb_id}">
+        <div class="explore-poster"${f.poster_url ? ` style="background-image:url(${escAttr(f.poster_url)})"` : ''}></div>
+        <div class="explore-card-body">
+          <h3 class="explore-card-title">${italiciseTitle(f.title)}</h3>
+          <div class="explore-card-meta">${meta.join(' · ')}</div>
+          ${f.overview ? `<p class="explore-card-overview">${escapeHtml(f.overview)}</p>` : ''}
+          <div class="explore-card-actions">
+            ${f.in_watchlist
+              ? `<button class="explore-add-btn added" disabled>✓ In watchlist</button>`
+              : `<button class="explore-add-btn" data-add="${f.tmdb_id}">+ Add to watchlist</button>`}
+            <a class="explore-lbx-link" href="${escAttr(f.letterboxd_url)}" target="_blank" rel="noopener">
+              Also on Letterboxd ↗
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  results.querySelectorAll('.explore-add-btn[data-add]').forEach(btn => {
+    btn.addEventListener('click', () => addExploreFilm(btn));
+  });
+}
+
+function escapeHtml(s) {
+  return (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function addExploreFilm(btn) {
+  const tmdbId = parseInt(btn.dataset.add, 10);
+  if (!tmdbId) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Adding…';
+
+  try {
+    const res = await apiFetch('/api/user-films/add', {
+      method: 'POST',
+      body:   JSON.stringify({ tmdb_id: tmdbId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    btn.textContent = data.already_in_watchlist ? '✓ Already in watchlist' : '✓ Added';
+    btn.classList.add('added');
+    // Background refresh so the picker + trailers feed pick this film up
+    refreshWatchlist();
+  } catch (e) {
+    console.error('[explore] add failed:', e);
+    btn.disabled    = false;
+    btn.textContent = '+ Add to watchlist';
+  }
+}
+
+// Wiring — runs once at script load (elements exist in markup)
+$('exploreBackBtn').addEventListener('click', () => {
+  show('home');
+  setProgrammeEyebrow();
+});
+
+// Debounced search input. While a query is present the mode toggle is
+// visually disabled (mode is irrelevant — we're doing /search/movie).
+$('exploreSearch').addEventListener('input', e => {
+  exploreState.query = e.target.value.trim();
+  $('exploreModeToggle').classList.toggle('disabled', !!exploreState.query);
+  // Clearing the search input restores the trending/top-rated mode UI
+  clearTimeout(exploreSearchTimer);
+  exploreSearchTimer = setTimeout(fetchExploreResults, 350);
+});
+
+$('exploreModeToggle').querySelectorAll('.explore-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (exploreState.query) return; // disabled while searching
+    if (exploreState.mode === btn.dataset.mode) return; // already active
+    exploreState.mode = btn.dataset.mode;
+    $('exploreModeToggle').querySelectorAll('.explore-mode-btn').forEach(b => {
+      b.classList.toggle('active', b === btn);
+    });
+    fetchExploreResults();
+  });
+});
+
+$('exploreDecades').querySelectorAll('.explore-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    if (exploreState.decade === chip.dataset.decade) return; // already active
+    exploreState.decade = chip.dataset.decade;
+    $('exploreDecades').querySelectorAll('.explore-chip').forEach(c => {
+      c.classList.toggle('active', c === chip);
+    });
+    fetchExploreResults();
+  });
+});
 
 // ── Trailers ──────────────────────────────────────────────────────────────────
 //

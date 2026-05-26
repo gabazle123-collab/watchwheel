@@ -370,6 +370,45 @@
       </ol>
     </section>
 
+    <!-- EXPLORE (TMDB-backed discovery) -->
+    <section id="explore" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="exploreBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M10 3 L5 8 L10 13"/>
+          </svg>
+        </button>
+        <span class="result-title">Explore</span>
+        <span style="width:30px;"></span>
+      </nav>
+
+      <div class="eyebrow"><span class="rule"></span>For your watchlist</div>
+      <h1 class="headline">Find your next <em>film</em>.</h1>
+
+      <input type="search" id="exploreSearch" class="explore-search"
+             placeholder="Search films by title…"
+             autocomplete="off" autocapitalize="off" spellcheck="false">
+
+      <div class="explore-mode-toggle" id="exploreModeToggle">
+        <button class="explore-mode-btn active" data-mode="trending">Trending</button>
+        <button class="explore-mode-btn" data-mode="top_rated">Top rated</button>
+      </div>
+
+      <div class="explore-decades" id="exploreDecades">
+        <button class="explore-chip active" data-decade="">Any era</button>
+        <button class="explore-chip" data-decade="2020">2020s</button>
+        <button class="explore-chip" data-decade="2010">2010s</button>
+        <button class="explore-chip" data-decade="2000">2000s</button>
+        <button class="explore-chip" data-decade="1990">1990s</button>
+        <button class="explore-chip" data-decade="1980">1980s</button>
+        <button class="explore-chip" data-decade="1970">1970s</button>
+        <button class="explore-chip" data-decade="1960">1960s</button>
+      </div>
+
+      <div id="exploreResults" class="explore-results"></div>
+      <p id="exploreStatus" class="status"></p>
+    </section>
+
     <!-- ACCOUNT SETTINGS -->
     <section id="account" class="screen" hidden>
       <nav class="result-topbar">
@@ -488,6 +527,13 @@
         <line x1="3" y1="13" x2="15" y2="13"/>
       </svg>
       <span>Library</span>
+    </button>
+    <button class="nav-item" data-nav="explore">
+      <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+        <circle cx="8" cy="8" r="5.5"/>
+        <path d="M12 12 L15.5 15.5"/>
+      </svg>
+      <span>Explore</span>
     </button>
     <button class="nav-item" data-nav="account">
       <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3">
