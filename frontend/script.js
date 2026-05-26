@@ -36,7 +36,7 @@ const logo = document.querySelector('.logo');
 
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
-  'wizard',
+  'wizard', 'import',
   'home', 'screening', 'library', 'account', 'trailers',
 ];
 
@@ -45,8 +45,8 @@ function show(screenId) {
     const el = $(id);
     if (el) el.hidden = (id !== screenId);
   });
-  // Hide the settings dot-menu on auth / wizard screens — they have their own back nav
-  const authScreens = ['auth-entry', 'auth-signup', 'auth-signin', 'wizard'];
+  // Hide the settings dot-menu on auth / wizard / import — they have their own back nav
+  const authScreens = ['auth-entry', 'auth-signup', 'auth-signin', 'wizard', 'import'];
   $('settingsBtn').style.visibility = authScreens.includes(screenId) ? 'hidden' : 'visible';
   closeAllDisclosures();
   showBottomNav(screenId);
@@ -378,16 +378,12 @@ $('wizardBackBtn').addEventListener('click', () => {
   if (cur > 1) showWizardStep(cur - 1);
 });
 
-// Step 3 — Import Letterboxd export ZIP (or skip)
+// Step 3 — Import Letterboxd export ZIP (or skip). Uses the shared
+// file-picker helper so the wizard and settings paths stay in sync; the
+// `advanceToWizardStep` opt makes the success state route to wz2 instead
+// of going home.
 $('wizImportBtn').addEventListener('click', () => {
-  const input = document.createElement('input');
-  input.type    = 'file';
-  input.accept  = '.zip,application/zip';
-  input.onchange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) uploadLetterboxdImport(file, { advanceToWizardStep: 2 });
-  };
-  input.click();
+  openLetterboxdFilePicker({ advanceToWizardStep: 2 });
 });
 
 $('wizImportSkip').addEventListener('click', () => {
@@ -844,13 +840,28 @@ function openLetterboxdFilePicker(opts = {}) {
   input.click();
 }
 
+// Settings → Import: send the user to the standalone #import screen so
+// they see the same step-by-step instructions as during onboarding,
+// instead of dumping them straight into a system file picker.
 $('sheetImportLetterboxd').addEventListener('click', () => {
   closeSheet();
-  openLetterboxdFilePicker();
+  setBgWarm(false);
+  show('import');
 });
 
-// Empty-watchlist banner on home — same file picker as Settings → Import
-$('emptyImportBtn').addEventListener('click', () => openLetterboxdFilePicker());
+// Empty-watchlist banner on home — also routes through the instructions screen
+$('emptyImportBtn').addEventListener('click', () => {
+  setBgWarm(false);
+  show('import');
+});
+
+// Standalone import screen wiring
+$('importBackBtn').addEventListener('click', () => {
+  show('home');
+  setProgrammeEyebrow();
+});
+
+$('importUploadBtn').addEventListener('click', () => openLetterboxdFilePicker());
 
 function showImportOverlay() {
   $('importOverlay').hidden          = false;

@@ -939,27 +939,104 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 }
 .import-dismiss:hover { color: var(--ww-cream); border-color: rgba(232, 223, 213, 0.25); }
 
-/* ── Wizard step 3: import ─────────────────────────────────────────────── */
-.wiz-import-hint {
-  margin-top: 22px;
-  padding: 14px 16px;
-  border: 1px solid var(--ww-border);
-  border-radius: 8px;
-  background: var(--ww-surface);
-  display: flex; flex-direction: column; gap: 4px;
+/* ── Letterboxd-import instructions (wizard step 3 + standalone #import) ──── */
+.import-steps {
+  list-style: none;
+  padding: 0;
+  margin: 26px 0 18px;
+  display: flex; flex-direction: column;
+  gap: 22px;
 }
-.wiz-import-hint-label {
-  font-family: var(--font-sans);
-  font-size: 9px; letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ww-taupe-dim);
+
+.import-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
 }
-.wiz-import-hint-body {
+
+.import-step-num {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(168, 132, 92, 0.5);
+  color: var(--ww-amber-text);
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: 13px;
+  font-size: 14px;
+  display: grid; place-items: center;
+  margin-top: 1px;
+}
+
+.import-step-body {
+  flex: 1;
+  min-width: 0;   /* let long titles wrap inside the flex item */
+}
+
+.import-step-title {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--ww-cream);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.import-step-title em {
+  font-style: italic;
+  color: var(--ww-amber-bright);
+}
+
+.import-step-detail {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ww-taupe-dim);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+/* External-link CTA inside step 1 — amber, modest */
+.import-step-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid rgba(168, 132, 92, 0.5);
+  border-radius: 20px;
+  background: rgba(168, 132, 92, 0.06);
+  color: var(--ww-amber-text);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.import-step-cta:hover {
+  background: rgba(168, 132, 92, 0.15);
+  border-color: var(--ww-amber);
+  color: var(--ww-cream);
+}
+.import-step-cta svg { display: block; }
+
+/* Visual hint inside step 2 — a chip-shaped indicator showing the user
+   what button to look for on Letterboxd. Non-interactive. */
+.lbx-button-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--ww-border-strong);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
   color: var(--ww-cream-dim);
-  line-height: 1.45;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.lbx-button-hint svg { display: block; opacity: 0.85; }
+
+/* The upload button sits inside step 3 — keep it left-aligned */
+.import-upload-btn {
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .wiz-username-row { margin-top: 16px; }
