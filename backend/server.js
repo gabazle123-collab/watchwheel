@@ -375,21 +375,27 @@ app.get('/trailer', async (req, res) => {
 // POST /trailers/batch  body: { films: [{title, year, url}] }
 //
 // Resolution order per film:
-//   1. user_films.youtube_id    — set by the TMDB import; zero API cost
-//   2. film_metadata_cache hit  — set by earlier YouTube searches; zero cost
-//   3. YouTube search "official trailer"  → 100 quota units
-//   4. YouTube search "teaser"            → 100 quota units
-// Tier 1 is a single bulk lookup at the top of the handler; tiers 2-4 run
-// per-film via getTrailerForFilm() (parallel across films, sequential within).
+//   1. user_films row with youtube_id    → return it (source: 'tmdb')
+//   2. user_films row with youtube_id IS NULL → confirmed no trailer (source: 'tmdb_none').
+//      TMDB already searched its videos table and found nothing — burning a
+//      YouTube search would just confirm that result at 100 quota/film.
+//   3. No user_films row at all → fall through to getTrailerForFilm():
+//        a. film_metadata_cache hit (zero cost)
+//        b. YouTube "official trailer" search (100 units)
+//        c. YouTube "teaser" search (100 units)
+// Tier 1+2 share one bulk lookup at the top; tier 3 runs per-film
+// (parallel across films, sequential waterfall within each).
 app.post('/trailers/batch', requireAuth, async (req, res) => {
   const films = Array.isArray(req.body?.films) ? req.body.films.slice(0, 20) : [];
   if (films.length === 0) return res.json({ trailers: [] });
 
-  // ── Tier 1: bulk-lookup user_films.youtube_id ──
-  // One round-trip, zero YouTube cost. Most films come from the TMDB import
-  // and already have a trailer key — this short-circuits the waterfall.
-  const urls = films.map(f => f.url).filter(Boolean);
-  const userFilmsMap = {};
+  // ── Tier 1+2: bulk-lookup user_films ──
+  // Distinguishes between "have trailer" (cachedMap) and "TMDB checked, no
+  // trailer exists" (confirmedNoTrailer). Films absent from user_films
+  // entirely fall through to the YouTube waterfall.
+  const urls               = films.map(f => f.url).filter(Boolean);
+  const cachedMap          = {};
+  const confirmedNoTrailer = new Set();
   if (urls.length > 0 && supabase) {
     const { data: userFilms, error } = await supabase
       .from('user_films')
@@ -400,34 +406,41 @@ app.post('/trailers/batch', requireAuth, async (req, res) => {
       console.error('[trailers/batch] user_films lookup failed:', error.message);
     } else {
       (userFilms || []).forEach(f => {
-        if (f.youtube_id) userFilmsMap[f.letterboxd_url] = f.youtube_id;
+        if (f.youtube_id) cachedMap[f.letterboxd_url] = f.youtube_id;
+        else              confirmedNoTrailer.add(f.letterboxd_url);
       });
     }
   }
 
-  // ── Tiers 2-4: only run for films that didn't already have a TMDB key ──
+  // ── Tier 3: only for films not in user_films at all ──
   const results = await Promise.all(films.map(async (f) => {
-    if (userFilmsMap[f.url]) {
-      return { url: f.url, youtube_id: userFilmsMap[f.url], source: 'tmdb' };
+    if (cachedMap[f.url]) {
+      return { url: f.url, youtube_id: cachedMap[f.url], source: 'tmdb' };
+    }
+    if (confirmedNoTrailer.has(f.url)) {
+      // TMDB already verified there's no trailer — don't burn YouTube quota
+      return { url: f.url, youtube_id: null, source: 'tmdb_none' };
     }
     const r = await getTrailerForFilm({ title: f.title, year: f.year, filmUrl: f.url });
     return { url: f.url, youtube_id: r.youtube_id, source: r.source || null, error: r.error };
   }));
 
-  // Per-source summary. `tmdb` = served from user_films (import). `cache` =
-  // served from film_metadata_cache (an earlier YouTube search this user or
-  // another user did). `youtube_trailer` / `youtube_teaser` = fresh searches
-  // this batch — those are the only ones that cost quota.
-  const counts = { tmdb: 0, cache: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
+  // Per-source summary.
+  //   tmdb        — served from user_films (had a youtube_id from import)
+  //   tmdb_none   — user_films row exists, TMDB confirmed no trailer (zero cost)
+  //   cache       — served from film_metadata_cache (earlier YouTube search)
+  //   youtube_*   — fresh YouTube search this batch (the only quota-burners)
+  //   none        — fell through every tier with no trailer found
+  const counts = { tmdb: 0, tmdb_none: 0, cache: 0, youtube_trailer: 0, youtube_teaser: 0, none: 0 };
   for (const r of results) {
-    if (r.youtube_id && r.source && counts[r.source] !== undefined) counts[r.source]++;
+    if (r.source && counts[r.source] !== undefined) counts[r.source]++;
     else if (!r.youtube_id) counts.none++;
   }
-  const hits  = films.length - counts.none;
+  const hits  = counts.tmdb + counts.cache + counts.youtube_trailer + counts.youtube_teaser;
   const quota = results.some(r => r.error === 'quota_exceeded');
   console.log(
     `[trailers/batch] ${films.length} films → ${hits} trailers ` +
-    `(tmdb: ${counts.tmdb}, cache: ${counts.cache}, ` +
+    `(tmdb: ${counts.tmdb}, tmdb_none: ${counts.tmdb_none}, cache: ${counts.cache}, ` +
     `youtube_trailer: ${counts.youtube_trailer}, youtube_teaser: ${counts.youtube_teaser}, ` +
     `none: ${counts.none})` +
     (quota ? ' [quota exceeded]' : '')
