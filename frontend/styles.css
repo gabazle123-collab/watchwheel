@@ -198,6 +198,44 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   color: var(--ww-amber-text);
 }
 
+.mood-count {
+  margin: 8px 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ww-taupe-dim);
+  min-height: 16px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: rgba(30,26,22,0.94);
+  border: 1px solid var(--ww-border-strong);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ww-cream-dim);
+  white-space: nowrap;
+  max-width: calc(100vw - 40px);
+  white-space: normal;
+  text-align: center;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ── Glass cards & disclosure panels ───────────────────────────────────── */
 .glass-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; align-items: start; }
 

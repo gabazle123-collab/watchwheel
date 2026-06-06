@@ -7,6 +7,17 @@ const API_BASE          = 'https://watchwheel.onrender.com';
 // supabase is the UMD global injected by the CDN script in index.html
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ── Mood → genre filter map ───────────────────────────────────────────────────
+
+const MOOD_FILTERS = {
+  'Slow burn':    { genres: ['Drama', 'Mystery', 'Thriller'], minRuntime: 110 },
+  'Sun-drenched': { genres: ['Comedy', 'Romance', 'Adventure', 'Family'] },
+  'Noir':         { genres: ['Crime', 'Thriller', 'Mystery'] },
+  'Melancholy':   { genres: ['Drama', 'Romance'] },
+  'First date':   { genres: ['Romance', 'Comedy'] },
+  'Wintry':       { genres: ['Drama', 'Mystery', 'Fantasy'] },
+};
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
@@ -17,7 +28,7 @@ const state = {
   // existing
   username:      localStorage.getItem('ww_username') || null,
   watchlist:     [],
-  selectedMoods: new Set(),
+  selectedMood: null,
   moodText:      '',
   decade:        null,
   runtime:       null,
@@ -33,6 +44,15 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const logo = document.querySelector('.logo');
+
+function showToast(msg) {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => el.classList.remove('visible'), 3500);
+}
 
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
@@ -133,7 +153,7 @@ const RUNTIME_OPTIONS = [
   { value: 'epic',     label: 'An epic',          sub: '› 150 min'   },
 ];
 
-function buildDisclosure(name, options, valueLabelId) {
+function buildDisclosure(name, options, valueLabelId, onChange) {
   const root       = document.querySelector(`[data-disclosure="${name}"]`);
   const panel      = root.querySelector('[data-disclosure-panel]');
   const trigger    = root.querySelector('[data-disclosure-trigger]');
@@ -155,6 +175,7 @@ function buildDisclosure(name, options, valueLabelId) {
         state[name] = val;
         $(valueLabelId).textContent = options.find(o => o.value === val).label;
         close();
+        if (onChange) onChange();
       });
     });
   }
@@ -193,27 +214,35 @@ moodTextEl.addEventListener('input', () => {
   state.moodText = moodTextEl.value;
   moodTextEl.classList.toggle('has-content', moodTextEl.value.trim().length > 0);
   chipsBlock.classList.toggle('dim', moodTextEl.value.trim().length > 0);
+  // Free-text mood input and chip selection are mutually exclusive
+  // (free-text mood → LLM interpretation is a future enhancement)
+  if (moodTextEl.value.trim().length > 0 && state.selectedMood) {
+    state.selectedMood = null;
+    document.querySelectorAll('#moodChips .chip').forEach(c => c.classList.remove('selected'));
+    updateMoodCount();
+  }
 });
 
-document.querySelectorAll('.chip').forEach(chip => {
+document.querySelectorAll('#moodChips .chip').forEach(chip => {
   chip.addEventListener('click', () => {
-    const mood = chip.dataset.mood;
-    if (state.selectedMoods.has(mood)) {
-      state.selectedMoods.delete(mood);
+    const mood = chip.textContent.trim();
+    if (state.selectedMood === mood) {
+      state.selectedMood = null;
       chip.classList.remove('selected');
     } else {
-      state.selectedMoods.add(mood);
+      document.querySelectorAll('#moodChips .chip').forEach(c => c.classList.remove('selected'));
       chip.classList.add('selected');
+      state.selectedMood = mood;
     }
+    updateMoodCount();
   });
 });
 
 function composeMoodDescription() {
-  const text  = state.moodText.trim();
-  const chips = Array.from(state.selectedMoods);
-  if (text && chips.length) return `${text}. Mood: ${chips.join(', ')}`;
-  if (text)        return text;
-  if (chips.length) return `Mood: ${chips.join(', ')}`;
+  const text = state.moodText.trim();
+  if (text && state.selectedMood) return `${text}. Mood: ${state.selectedMood}`;
+  if (text) return text;
+  if (state.selectedMood) return `Mood: ${state.selectedMood}`;
   return '';
 }
 
@@ -628,17 +657,53 @@ function updateEmptyState() {
 
 // ── Pick logic ────────────────────────────────────────────────────────────────
 
-function filterWatchlist() {
+function matchesDecade(film, decade) {
+  const y = parseInt(film.year);
+  if (!y || !decade) return true;
+  const d = parseInt(decade);
+  return y >= d && y < d + 10;
+}
+
+function matchesRuntime(film, runtime) {
+  const r = film.runtime_minutes;
+  if (!runtime || !r) return true;
+  if (runtime === 'short')    return r < 90;
+  if (runtime === 'standard') return r >= 90 && r <= 120;
+  if (runtime === 'long')     return r > 120 && r <= 150;
+  if (runtime === 'epic')     return r > 150;
+  return true;
+}
+
+function getFilteredPool() {
   let pool = state.watchlist.slice();
-  if (state.decade) {
-    pool = pool.filter(m => {
-      const y = parseInt(m.year);
-      if (!y) return false;
-      const d = parseInt(state.decade);
-      return y >= d && y < d + 10;
+
+  if (state.selectedMood && MOOD_FILTERS[state.selectedMood]) {
+    const mood = MOOD_FILTERS[state.selectedMood];
+    pool = pool.filter(film => {
+      const filmGenres = film.genres || [];
+      const genreMatch = mood.genres.some(g => filmGenres.includes(g));
+      const runtimeMatch = !mood.minRuntime || (film.runtime_minutes && film.runtime_minutes >= mood.minRuntime);
+      return genreMatch && runtimeMatch;
     });
   }
-  return pool.length > 0 ? pool : state.watchlist;
+
+  if (state.decade) {
+    pool = pool.filter(film => matchesDecade(film, state.decade));
+  }
+
+  if (state.runtime) {
+    pool = pool.filter(film => matchesRuntime(film, state.runtime));
+  }
+
+  return pool;
+}
+
+function updateMoodCount() {
+  const el = document.querySelector('.mood-count');
+  if (!el) return;
+  if (!state.selectedMood) { el.textContent = ''; return; }
+  const count = getFilteredPool().length;
+  el.textContent = `${count} film${count === 1 ? '' : 's'} match this mood`;
 }
 
 const QUOTES = [
@@ -660,9 +725,21 @@ function italiciseTitle(title) {
 }
 
 async function pickFilm(opts = {}) {
-  const pool = opts.ignoreFilters ? state.watchlist : filterWatchlist();
+  let pool;
+  if (opts.ignoreFilters) {
+    pool = state.watchlist.slice();
+  } else {
+    pool = getFilteredPool();
+    if (pool.length === 0 && state.selectedMood) {
+      // Mood + other filters combined left nothing — relax mood, keep decade/runtime
+      showToast(`No ${state.selectedMood} films match your other filters. Showing a wider pick.`);
+      pool = state.watchlist.slice();
+      if (state.decade)  pool = pool.filter(f => matchesDecade(f, state.decade));
+      if (state.runtime) pool = pool.filter(f => matchesRuntime(f, state.runtime));
+    }
+  }
   if (pool.length === 0) {
-    $('homeStatus').textContent = 'No films match those filters.'; return;
+    showToast('No films match these filters. Try clearing some.'); return;
   }
 
   logo.classList.add('spinning');
@@ -683,9 +760,7 @@ async function pickFilm(opts = {}) {
     synopsis  = data.synopsis || null;
   } catch (e) {}
 
-  const moodDisplay = state.selectedMoods.size > 0
-    ? Array.from(state.selectedMoods)[0]
-    : (state.moodText ? 'Your own words' : 'Open');
+  const moodDisplay = state.selectedMood || (state.moodText ? 'Your own words' : 'Open');
 
   $('resultPoster').src     = posterUrl || '';
   $('resultPoster').alt     = movie.title;
@@ -1518,8 +1593,8 @@ sb.auth.onAuthStateChange((event, session) => {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function boot() {
-  disclosures.push(buildDisclosure('decade',  DECADE_OPTIONS,  'decadeValue'));
-  disclosures.push(buildDisclosure('runtime', RUNTIME_OPTIONS, 'runtimeValue'));
+  disclosures.push(buildDisclosure('decade',  DECADE_OPTIONS,  'decadeValue',  updateMoodCount));
+  disclosures.push(buildDisclosure('runtime', RUNTIME_OPTIONS, 'runtimeValue', updateMoodCount));
 
   const { data: { session } } = await sb.auth.getSession();
   state.session = session;
