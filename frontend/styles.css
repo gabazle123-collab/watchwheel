@@ -1813,11 +1813,29 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 .discover-btn::after { content: '→'; color: var(--ww-amber); }
 .discover-btn:active { border-color: var(--ww-brass); color: var(--ww-cream); }
 
-/* ── Screening: your personal rating ────────────────────────────────────── */
-.screening-your-rating {
+/* ── Screening: community + personal ratings ────────────────────────────── */
+.screening-ratings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -4px 0 22px;
+}
+.screening-rating-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.screening-rating-value {
   font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 14px;
-  color: var(--ww-amber-text);
-  margin: -8px 0 22px;
+  font-size: 16px;
+  line-height: 1;
+}
+.screening-rating-value.tmdb  { color: var(--ww-cream-dim); }
+.screening-rating-value.yours { color: var(--ww-amber-text); }
+.screening-rating-label {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ww-taupe-dim);
 }

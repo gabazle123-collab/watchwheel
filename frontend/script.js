@@ -699,6 +699,7 @@ function normalizeFilm(f) {
     runtime_minutes: f.runtime_minutes ?? f.runtimeMinutes ?? null,
     youtube_id:      f.youtube_id ?? f.youtubeId ?? null,
     user_rating:     f.user_rating ?? f.userRating ?? null,
+    tmdb_rating:     f.tmdb_rating ?? f.tmdbRating ?? null,
   };
 }
 
@@ -944,15 +945,25 @@ async function showScreeningFor(movie) {
     ? movie.cast.join(', ')
     : '—';
 
-  // Personal rating — shown if the user has watched/rated this film before
-  const yourRatingEl = $('screeningYourRating');
+  // Ratings block — TMDB community score (if we have it) + the user's own
+  // rating (only if they've rated it before). Whole block hides if neither.
   const personalRating = ratingForFilm(movie);
-  if (personalRating != null) {
-    yourRatingEl.textContent = `★ ${personalRating} · your rating`;
-    yourRatingEl.hidden = false;
+  const communityRating = movie.tmdb_rating != null ? Math.round(movie.tmdb_rating * 10) / 10 : null;
+  const tmdbRow = $('screeningTmdbRow');
+  const yourRow = $('screeningYourRow');
+  if (communityRating != null) {
+    $('screeningTmdbValue').textContent = `★ ${communityRating}`;
+    tmdbRow.hidden = false;
   } else {
-    yourRatingEl.hidden = true;
+    tmdbRow.hidden = true;
   }
+  if (personalRating != null) {
+    $('screeningYourValue').textContent = `★ ${personalRating}`;
+    yourRow.hidden = false;
+  } else {
+    yourRow.hidden = true;
+  }
+  $('screeningRatings').hidden = (communityRating == null && personalRating == null);
 
   // Flip-to-trailer poster — injects the iframe on flip (the flip tap is the
   // user gesture iOS requires for autoplay)

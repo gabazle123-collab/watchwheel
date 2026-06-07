@@ -574,7 +574,8 @@ function parseReviewsCsv(csvText) {
 // for /import/letterboxd has already been sent by the time this kicks off.
 const NULL_META = {
   tmdb_id: null, poster_url: null, runtime_minutes: null,
-  synopsis: null, genres: null, director: null, cast_list: null, youtube_id: null,
+  synopsis: null, genres: null, director: null, cast_list: null,
+  tmdb_rating: null, youtube_id: null,
 };
 
 // Resolve a {title, year} entry to TMDB metadata (or null if no match).
@@ -598,6 +599,7 @@ async function resolveTmdbMeta(entry) {
     genres:          details?.genres?.map(g => g.name) || null,
     director:        director,
     cast_list:       castList.length ? castList : null,
+    tmdb_rating:     details?.vote_average ?? null,
     youtube_id:      trailer?.key || null,
   };
 }
@@ -846,6 +848,7 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
     director:        f.director,
     cast:            f.cast_list,
     user_rating:     f.user_rating,
+    tmdb_rating:     f.tmdb_rating,
     youtube_id:      f.youtube_id,
     status:          f.status,
   }));
@@ -1105,6 +1108,7 @@ app.get('/api/user-watched', requireAuth, async (req, res) => {
       genres:         f.genres,
       synopsis:       f.synopsis,
       runtimeMinutes: f.runtime_minutes,
+      tmdbRating:     f.tmdb_rating,
       youtubeId:      f.youtube_id,
       tmdbId:         f.tmdb_id,
     }));
@@ -1169,6 +1173,7 @@ app.post('/api/user-films/add', requireAuth, async (req, res) => {
       genres:          (d.genres || []).map(g => g.name),
       director:        director,
       cast_list:       castList.length ? castList : null,
+      tmdb_rating:     d.vote_average ?? null,
       youtube_id:      trailer?.key || null,
       status:          'ready',
       added_via:       'explore',
