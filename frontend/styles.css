@@ -1723,3 +1723,101 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   color: #d98a80;
   cursor: pointer;
 }
+
+/* ── Library: tab bar ───────────────────────────────────────────────────── */
+.library-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--ww-border);
+  margin-bottom: 18px;
+}
+.library-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 10px 2px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ww-taupe-dim);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+.library-tab.active {
+  color: var(--ww-amber-text);
+  border-bottom-color: var(--ww-amber);
+}
+
+/* ── Library card: personal rating + review indicator ───────────────────── */
+.lib-card-rating {
+  font-family: var(--font-serif);
+  font-size: 10px;
+  color: var(--ww-amber-text);
+  white-space: nowrap;
+}
+.lib-card-year-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.lib-review-badge {
+  position: absolute; top: 5px; left: 5px;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10,15,20,0.6);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--ww-cream-dim);
+}
+
+/* ── Film sheet: rating + review ────────────────────────────────────────── */
+.film-sheet-rating {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ww-amber-text);
+  margin-bottom: 10px;
+}
+.film-sheet-review { margin: 0 0 20px; }
+.film-sheet-review .eyebrow-sm { margin-bottom: 8px; }
+.film-sheet-review-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ww-cream-dim);
+}
+
+/* ── Discover buttons (in film sheet) ───────────────────────────────────── */
+.film-sheet-discover { margin-top: 22px; }
+.film-sheet-discover .eyebrow-sm { margin-bottom: 12px; }
+#filmSheetDiscoverBtns { display: flex; flex-direction: column; gap: 8px; }
+.discover-btn {
+  width: 100%;
+  background: rgba(21, 25, 31, 0.6);
+  border: 1px solid var(--ww-border-strong);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  color: var(--ww-cream-dim);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.discover-btn::after { content: '→'; color: var(--ww-amber); }
+.discover-btn:active { border-color: var(--ww-brass); color: var(--ww-cream); }
+
+/* ── Screening: your personal rating ────────────────────────────────────── */
+.screening-your-rating {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ww-amber-text);
+  margin: -8px 0 22px;
+}

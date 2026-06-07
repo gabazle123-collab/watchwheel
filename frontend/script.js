@@ -36,10 +36,12 @@ const state = {
   decade:        null,
   runtime:       null,
   history:       JSON.parse(localStorage.getItem('ww_history') || '[]'),
+  watchedFilms:  [],                // populated by GET /api/user-watched
   currentMovie:  null,
   // ui
   currentScreen:       null,
   libraryNeedsRefresh: false,
+  libraryTab:          'watchlist', // 'watchlist' | 'watched'
   // wizard
   wizUsername:    '',
   wizDigestOptIn: true,
@@ -73,7 +75,7 @@ function showToast(msg, durationMs = 3200) {
 const ALL_SCREENS = [
   'auth-entry', 'auth-signup', 'auth-signin',
   'wizard', 'import',
-  'home', 'screening', 'library', 'account', 'trailers', 'explore',
+  'home', 'screening', 'library', 'account', 'trailers', 'explore', 'discover',
 ];
 
 function show(screenId) {
@@ -385,7 +387,7 @@ $('signinSubmitBtn').addEventListener('click', async () => {
     // Pull imported films BEFORE showing home so the picker has data the
     // moment the screen is visible. Without awaiting, the picker reads an
     // empty state.watchlist and "no films" briefly flashes.
-    await refreshWatchlist();
+    await Promise.all([refreshWatchlist(), refreshWatchedFilms()]);
     show('home');
     setProgrammeEyebrow();
   }
@@ -483,7 +485,7 @@ $('wz3DoneBtn').addEventListener('click', async () => {
     });
     await loadUserProfile();
     // Pull whatever the user just imported (no-op if they skipped)
-    await refreshWatchlist();
+    await Promise.all([refreshWatchlist(), refreshWatchedFilms()]);
   } catch (e) {}
 
   logo.classList.remove('spinning');
@@ -670,6 +672,47 @@ async function refreshWatchlist() {
   }
 }
 
+async function refreshWatchedFilms() {
+  if (!state.session) return;
+  try {
+    const res = await apiFetch('/api/user-watched');
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`/api/user-watched ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const films = await res.json();
+    state.watchedFilms = Array.isArray(films) ? films : [];
+    console.log('[watched] loaded', state.watchedFilms.length, 'films from user_watched');
+  } catch (e) {
+    console.error('[watched] /api/user-watched failed:', e);
+  }
+}
+
+// Watched films come back camelCase (runtimeMinutes/youtubeId/tmdbId) while
+// watchlist films are snake_case. Normalise so the screening + trailer code
+// (which expects snake_case) works for both.
+function normalizeFilm(f) {
+  if (!f) return f;
+  return {
+    ...f,
+    tmdb_id:         f.tmdb_id ?? f.tmdbId ?? null,
+    runtime_minutes: f.runtime_minutes ?? f.runtimeMinutes ?? null,
+    youtube_id:      f.youtube_id ?? f.youtubeId ?? null,
+    user_rating:     f.user_rating ?? f.userRating ?? null,
+  };
+}
+
+// Personal rating for a watchlist film: prefer the row's own user_rating,
+// else cross-reference user_watched by tmdb_id then letterboxd_url.
+function ratingForFilm(film) {
+  if (film.user_rating != null) return film.user_rating;
+  if (film.userRating != null)  return film.userRating;
+  const tmdbId = film.tmdb_id ?? film.tmdbId;
+  const match = (state.watchedFilms || []).find(w =>
+    (tmdbId && w.tmdbId === tmdbId) || (film.url && w.url === film.url));
+  return match?.userRating ?? null;
+}
+
 function updateEmptyState() {
   const banner = $('emptyImportBanner');
   if (!banner) return;
@@ -831,6 +874,7 @@ async function pickFilm(opts = {}) {
 // (random choice) and the Library (direct "pick this film" / suggested tap).
 async function showScreeningFor(movie) {
   if (!movie) return;
+  movie = normalizeFilm(movie);   // accept watchlist (snake) + watched (camel) shapes
   state.currentMovie = movie;
 
   logo.classList.add('spinning');
@@ -899,6 +943,16 @@ async function showScreeningFor(movie) {
   $('screeningCast').textContent     = (movie.cast && movie.cast.length)
     ? movie.cast.join(', ')
     : '—';
+
+  // Personal rating — shown if the user has watched/rated this film before
+  const yourRatingEl = $('screeningYourRating');
+  const personalRating = ratingForFilm(movie);
+  if (personalRating != null) {
+    yourRatingEl.textContent = `★ ${personalRating} · your rating`;
+    yourRatingEl.hidden = false;
+  } else {
+    yourRatingEl.hidden = true;
+  }
 
   // Flip-to-trailer poster — injects the iframe on flip (the flip tap is the
   // user gesture iOS requires for autoplay)
@@ -1100,8 +1154,8 @@ async function uploadLetterboxdImport(file, opts = {}) {
 
     const finalStatus = await pollImport(importId);
 
-    // Refresh the picker's source — user_films now exists for this user
-    await refreshWatchlist();
+    // Refresh the picker's source — user_films + user_watched now exist
+    await Promise.all([refreshWatchlist(), refreshWatchedFilms()]);
     // The export's profile.csv may have set letterboxd_username; pull it.
     await loadUserProfile().catch(() => {});
 
@@ -1171,6 +1225,7 @@ function pollImport(importId) {
 // "seen" indicator). Tapping a grid card opens a detail bottom sheet.
 
 const libraryState = { search: '', sort: 'added' };
+const watchedState = { search: '', sort: 'watched' };
 
 // Resolve a history/suggested reference to the full user_films record so the
 // screening + detail sheet have director/cast/runtime/genres. Falls back to
@@ -1190,7 +1245,18 @@ function findFilmFor(ref) {
 function renderLibrary() {
   renderSuggestedRow();
   renderLibraryGrid();
+  renderWatchedGrid();
   state.libraryNeedsRefresh = false; // consumed
+}
+
+// Switch between the Watchlist and Watched tabs (content is cached in state,
+// so this just toggles visibility — no refetch).
+function setLibraryTab(tab) {
+  state.libraryTab = tab;
+  $('libraryWatchlistTab').hidden = tab !== 'watchlist';
+  $('libraryWatchedTab').hidden   = tab !== 'watched';
+  $('libraryTabs').querySelectorAll('.library-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
 }
 
 function renderSuggestedRow() {
@@ -1245,29 +1311,108 @@ function renderLibraryGrid() {
   grid.innerHTML = films.map(f => {
     const isSeen = seen.has(f.url);
     const genre  = Array.isArray(f.genres) && f.genres.length ? f.genres[0] : null;
+    const rating = ratingForFilm(f);
     return `
       <div class="library-card" data-url="${escAttr(f.url)}">
         <div class="lib-card-poster"${f.poster ? ` style="background-image:url(${escAttr(f.poster)})"` : ''}>
           ${isSeen ? `<div class="lib-seen-overlay">${seenCheck}</div>` : ''}
         </div>
         <div class="lib-card-title">${italiciseTitle(f.title)}</div>
-        <div class="lib-card-year">${f.year ? escapeHtml(String(f.year)) : '—'}</div>
+        <div class="lib-card-year-row">
+          <span class="lib-card-year">${f.year ? escapeHtml(String(f.year)) : '—'}</span>
+          ${rating != null ? `<span class="lib-card-rating">★ ${rating}</span>` : ''}
+        </div>
         ${genre ? `<span class="genre-pill">${escapeHtml(genre)}</span>` : ''}
       </div>`;
   }).join('');
 }
 
+function renderWatchedGrid() {
+  const grid = $('watchedGrid');
+  const all  = state.watchedFilms || [];
+
+  $('watchedCount').textContent =
+    all.length === 0 ? '' : `${all.length} watched film${all.length === 1 ? '' : 's'}`;
+
+  if (all.length === 0) {
+    grid.innerHTML = '<div class="library-empty">No watched films yet. Re-import your Letterboxd export to populate this.</div>';
+    return;
+  }
+
+  const q = watchedState.search.trim().toLowerCase();
+  let films = q ? all.filter(f => (f.title || '').toLowerCase().includes(q)) : all.slice();
+
+  // 'watched' keeps the API order (watched_date desc).
+  if (watchedState.sort === 'rating') {
+    films.sort((a, b) => (b.userRating ?? -1) - (a.userRating ?? -1));
+  } else if (watchedState.sort === 'az') {
+    films.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  }
+
+  if (films.length === 0) {
+    grid.innerHTML = '<div class="library-empty">No films match your search.</div>';
+    return;
+  }
+
+  grid.innerHTML = films.map((f, i) => {
+    const genre = Array.isArray(f.genres) && f.genres.length ? f.genres[0] : null;
+    return `
+      <div class="library-card" data-watched="${i}">
+        <div class="lib-card-poster"${f.poster ? ` style="background-image:url(${escAttr(f.poster)})"` : ''}>
+          ${f.review ? `<div class="lib-review-badge" title="You wrote a review">✍</div>` : ''}
+        </div>
+        <div class="lib-card-title">${italiciseTitle(f.title)}</div>
+        <div class="lib-card-year-row">
+          <span class="lib-card-year">${f.year ? escapeHtml(String(f.year)) : '—'}</span>
+          ${f.userRating != null ? `<span class="lib-card-rating">★ ${f.userRating}</span>` : ''}
+        </div>
+        ${genre ? `<span class="genre-pill">${escapeHtml(genre)}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  // Stash the currently-rendered (filtered+sorted) order so taps resolve to
+  // the right film object regardless of search/sort state.
+  grid._rendered = films;
+}
+
 // ── Film detail bottom sheet ──
+// Handles both watchlist films (snake_case: tmdb_id, runtime_minutes,
+// user_rating) and watched films (camelCase: tmdbId, runtimeMinutes,
+// userRating, review). Shows the personal rating, review, and discovery
+// buttons when the data is available.
 function openFilmSheet(film) {
   if (!film) return;
+
+  const tmdbId  = film.tmdb_id ?? film.tmdbId ?? null;
+  const runtime = film.runtime_minutes ?? film.runtimeMinutes ?? null;
+  const rating  = ratingForFilm(film);
+
   $('filmSheetPoster').src = film.poster || '';
   $('filmSheetPoster').alt = film.title || '';
   $('filmSheetTitle').innerHTML = italiciseTitle(film.title || '');
   $('filmSheetYear').textContent = film.year ? String(film.year) : '';
   $('filmSheetDirector').textContent = film.director || 'Unknown';
-  $('filmSheetRuntime').textContent  = film.runtime_minutes ? `${film.runtime_minutes} min` : '—';
+  $('filmSheetRuntime').textContent  = runtime ? `${runtime} min` : '—';
   $('filmSheetCast').textContent     = (film.cast && film.cast.length) ? film.cast.join(', ') : '—';
   $('filmSheetSynopsis').textContent = film.synopsis || '';
+
+  // Personal rating
+  const ratingEl = $('filmSheetRating');
+  if (rating != null) {
+    ratingEl.textContent = `★ ${rating} · your rating`;
+    ratingEl.hidden = false;
+  } else {
+    ratingEl.hidden = true;
+  }
+
+  // Personal review (watched films only)
+  const reviewWrap = $('filmSheetReview');
+  if (film.review) {
+    $('filmSheetReviewText').textContent = film.review;
+    reviewWrap.hidden = false;
+  } else {
+    reviewWrap.hidden = true;
+  }
 
   const genres = Array.isArray(film.genres) ? film.genres : [];
   $('filmSheetGenres').innerHTML = genres
@@ -1278,8 +1423,37 @@ function openFilmSheet(film) {
     showScreeningFor(film);
   };
 
+  // Discovery buttons — built from whatever metadata we have
+  renderDiscoverButtons(film, tmdbId);
+
   $('filmSheetBackdrop').hidden = false;
   $('filmSheet').hidden = false;
+}
+
+// Build the "Discover more" buttons in the sheet: similar films (needs a
+// tmdb_id), director filmography, and the top 2 billed cast members.
+function renderDiscoverButtons(film, tmdbId) {
+  const wrap = $('filmSheetDiscover');
+  const list = $('filmSheetDiscoverBtns');
+  const btns = [];
+
+  if (tmdbId) {
+    btns.push({ action: 'similar', tmdbId, label: 'Films like this' });
+  }
+  if (film.director) {
+    btns.push({ action: 'director', name: film.director, tmdbId,
+                label: `More from ${film.director}` });
+  }
+  (film.cast || []).slice(0, 2).forEach(actor => {
+    btns.push({ action: 'actor', name: actor, tmdbId, label: `More with ${actor}` });
+  });
+
+  if (btns.length === 0) { wrap.hidden = true; list.innerHTML = ''; return; }
+  wrap.hidden = false;
+  list.innerHTML = btns.map((b, i) =>
+    `<button class="discover-btn" data-discover="${i}">${escapeHtml(b.label)}</button>`).join('');
+  list._btns = btns;
+  list._sourceFilm = film;
 }
 
 function closeFilmSheet() {
@@ -1335,6 +1509,69 @@ $('libraryRefreshBtn').addEventListener('click', async () => {
     btn.style.transform  = '';
     btn.style.transition = '';
   }, 500);
+});
+
+// ── Library: tab switching ──
+$('libraryTabs').querySelectorAll('.library-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (state.libraryTab === btn.dataset.tab) return;
+    setLibraryTab(btn.dataset.tab);
+  });
+});
+
+// ── Watched tab interactions ──
+$('watchedGrid').addEventListener('click', e => {
+  const card = e.target.closest('.library-card');
+  if (!card) return;
+  const idx = parseInt(card.dataset.watched, 10);
+  const film = ($('watchedGrid')._rendered || [])[idx];
+  if (film) openFilmSheet(film);
+});
+
+$('watchedSearch').addEventListener('input', e => {
+  watchedState.search = e.target.value;
+  renderWatchedGrid();
+});
+
+$('watchedSort').querySelectorAll('.library-sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (watchedState.sort === btn.dataset.sort) return;
+    watchedState.sort = btn.dataset.sort;
+    $('watchedSort').querySelectorAll('.library-sort-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+    renderWatchedGrid();
+  });
+});
+
+$('watchedRefreshBtn').addEventListener('click', async () => {
+  const btn = $('watchedRefreshBtn');
+  btn.style.transform  = 'rotate(360deg)';
+  btn.style.transition = 'transform 0.5s ease';
+  await refreshWatchedFilms();
+  renderWatchedGrid();
+  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 500);
+});
+
+// ── Discovery (from the film sheet's "Discover more" buttons) ──
+$('filmSheetDiscoverBtns').addEventListener('click', e => {
+  const el = e.target.closest('.discover-btn');
+  if (!el) return;
+  const list = $('filmSheetDiscoverBtns');
+  const spec = (list._btns || [])[parseInt(el.dataset.discover, 10)];
+  const film = list._sourceFilm;
+  if (spec) openDiscover(spec, film);
+});
+
+$('discoverBackBtn').addEventListener('click', () => {
+  // Return to the film's detail sheet (over the Library screen)
+  show('library');
+  if (discoverState.sourceFilm) openFilmSheet(discoverState.sourceFilm);
+});
+
+$('discoverResults').addEventListener('click', e => {
+  const btn = e.target.closest('.btn-add-watchlist[data-add]');
+  if (!btn) return;
+  addToWatchlist(parseInt(btn.dataset.add, 10), btn);
 });
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
@@ -1618,9 +1855,9 @@ async function loadSimilar(tmdbId, label) {
   }
 }
 
-function renderSimilarGrid(films) {
-  const results = $('exploreSimilarResults');
-  results.innerHTML = films.map(f => `
+// Shared poster-grid card markup (similar results + discovery results).
+function gridCardsHtml(films) {
+  return films.map(f => `
     <div class="explore-grid-card">
       <div class="grid-poster"${f.poster_url ? ` style="background-image:url(${escAttr(f.poster_url)})"` : ''}></div>
       <div class="grid-title">${italiciseTitle(f.title)}</div>
@@ -1629,6 +1866,55 @@ function renderSimilarGrid(films) {
         ? `<button class="btn-add-watchlist in-watchlist" disabled>✓ In your watchlist</button>`
         : `<button class="btn-add-watchlist" data-add="${f.tmdb_id}">+ Add to watchlist</button>`}
     </div>`).join('');
+}
+
+function renderSimilarGrid(films) {
+  $('exploreSimilarResults').innerHTML = gridCardsHtml(films);
+}
+
+// ── Discovery results (from a film sheet's "Discover more" buttons) ──
+const discoverState = { sourceFilm: null };
+
+async function openDiscover(spec, film) {
+  discoverState.sourceFilm = film;
+  closeFilmSheet();
+
+  const headline = $('discoverHeadline');
+  const results  = $('discoverResults');
+  const status   = $('discoverStatus');
+  results.innerHTML = '';
+  status.textContent = 'Loading…';
+
+  // Headline + endpoint per discovery type
+  let url;
+  if (spec.action === 'similar') {
+    headline.textContent = 'Films like this';
+    url = `/api/explore/similar?tmdbId=${encodeURIComponent(spec.tmdbId)}`;
+  } else if (spec.action === 'director') {
+    headline.textContent = `Films directed by ${spec.name}`;
+    url = `/api/explore/director?name=${encodeURIComponent(spec.name)}` +
+          (spec.tmdbId ? `&excludeTmdbId=${encodeURIComponent(spec.tmdbId)}` : '');
+  } else {
+    headline.textContent = `Films with ${spec.name}`;
+    url = `/api/explore/actor?name=${encodeURIComponent(spec.name)}` +
+          (spec.tmdbId ? `&excludeTmdbId=${encodeURIComponent(spec.tmdbId)}` : '');
+  }
+
+  show('discover');
+  logo.classList.add('spinning');
+  try {
+    const res = await apiFetch(url);
+    if (!res.ok) throw new Error(`discover ${res.status}`);
+    const data = await res.json();
+    const films = data.results || [];
+    results.innerHTML = gridCardsHtml(films);
+    status.textContent = films.length === 0 ? 'No films to show.' : '';
+  } catch (e) {
+    console.error('[discover] failed:', e);
+    status.textContent = "Couldn't load these. Try again?";
+  } finally {
+    logo.classList.remove('spinning');
+  }
 }
 
 // After a successful add: pull the fresh watchlist into state, then update
@@ -2031,7 +2317,7 @@ async function boot() {
     // Await before show('home') so the picker has its data on first paint;
     // empty-state banner covers users who skipped import.
     await loadUserHistory();
-    await refreshWatchlist();
+    await Promise.all([refreshWatchlist(), refreshWatchedFilms()]);
     show('home');
     setProgrammeEyebrow();
 

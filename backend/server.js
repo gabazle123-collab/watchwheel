@@ -526,85 +526,174 @@ function parseWatchlistCsv(csvText) {
       title:          r['Name'] || r['name'] || '',
       year:           parseInt(r['Year'] || r['year'] || '', 10) || null,
       letterboxd_url: r['Letterboxd URI'] || r['letterboxd_uri'] || r['URI'] || '',
+      // present in watched.csv / reviews.csv; null for watchlist.csv
+      logged_date:    r['Date'] || null,
     }))
     .filter(r => r.title && r.letterboxd_url);
+}
+
+// Low-level CSV → array of row objects (shared options).
+function parseCsvRows(csvText) {
+  return parseCsv(csvText, {
+    columns: true, skip_empty_lines: true, trim: true,
+    relax_quotes: true, relax_column_count: true,
+  });
+}
+
+// ratings.csv → { [letterboxd_url]: rating(float) }
+// Headers: Date, Name, Year, Letterboxd URI, Rating
+function parseRatingsCsv(csvText) {
+  const map = {};
+  for (const r of parseCsvRows(csvText)) {
+    const url = r['Letterboxd URI'] || r['URI'] || '';
+    const rating = parseFloat(r['Rating']);
+    if (url && !Number.isNaN(rating)) map[url] = rating;
+  }
+  return map;
+}
+
+// reviews.csv → { [letterboxd_url]: { review, watchedDate, rating } }
+// Headers: Date, Name, Year, Letterboxd URI, Rating, Review, Tags, Watched Date
+function parseReviewsCsv(csvText) {
+  const map = {};
+  for (const r of parseCsvRows(csvText)) {
+    const url = r['Letterboxd URI'] || r['URI'] || '';
+    if (!url) continue;
+    const rating = parseFloat(r['Rating']);
+    map[url] = {
+      review:      (r['Review'] || '').trim() || null,
+      watchedDate: r['Watched Date'] || r['Date'] || null,
+      rating:      Number.isNaN(rating) ? null : rating,
+    };
+  }
+  return map;
 }
 
 // Background processing — walks the entries, hits TMDB, upserts user_films,
 // updates the imports row's progress counters. Runs async; the HTTP response
 // for /import/letterboxd has already been sent by the time this kicks off.
-async function processImport(userId, importId, entries) {
+const NULL_META = {
+  tmdb_id: null, poster_url: null, runtime_minutes: null,
+  synopsis: null, genres: null, director: null, cast_list: null, youtube_id: null,
+};
+
+// Resolve a {title, year} entry to TMDB metadata (or null if no match).
+async function resolveTmdbMeta(entry) {
+  const hit = await searchTmdb(entry.title, entry.year);
+  if (!hit?.id) return null;
+  const details = await fetchTmdbDetails(hit.id);
+  const trailer =
+    details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
+    details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
+    details?.videos?.results?.find(v => v.site === 'YouTube');
+  const director = details?.credits?.crew?.find(p => p.job === 'Director')?.name || null;
+  const castList = (details?.credits?.cast || []).slice(0, 5).map(p => p.name);
+  return {
+    tmdb_id:         hit.id,
+    poster_url:      details?.poster_path
+      ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
+      : (hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null),
+    runtime_minutes: details?.runtime || null,
+    synopsis:        details?.overview || hit.overview || null,
+    genres:          details?.genres?.map(g => g.name) || null,
+    director:        director,
+    cast_list:       castList.length ? castList : null,
+    youtube_id:      trailer?.key || null,
+  };
+}
+
+// Background processing — two phases sharing the same concurrency limiter and
+// progress counter: (1) watchlist films → user_films (with personal rating),
+// (2) watched films → user_watched (with rating + review + watched date).
+async function processImport(userId, importId, opts) {
+  const watchlistEntries = opts.watchlistEntries || [];
+  const watchedEntries   = opts.watchedEntries   || [];
+  const ratingsMap       = opts.ratingsMap       || {};
+  const reviewsMap       = opts.reviewsMap        || {};
+
+  const total = watchlistEntries.length + watchedEntries.length;
   let processed = 0;
-  let matched   = 0;
-  // Throttle progress writes to every 3 films (avoid 400 UPDATEs for a 400-film import).
+  let watchlistMatched = 0;
+  let watchedMatched = 0;
+  let ratingsApplied = 0;
+
   const writeProgress = async (title) => {
     await supabase.from('imports').update({
       processed_count:      processed,
-      matched_count:        matched,
+      matched_count:        watchlistMatched + watchedMatched,
       last_processed_title: title,
     }).eq('id', importId);
   };
+  const tick = async (title) => {
+    processed++;
+    if (processed % 3 === 0 || processed === total) await writeProgress(title).catch(() => {});
+  };
 
-  await Promise.all(entries.map(entry => limitTmdb(async () => {
+  // Phase 1 — watchlist → user_films
+  await Promise.all(watchlistEntries.map(entry => limitTmdb(async () => {
     try {
-      const hit = await searchTmdb(entry.title, entry.year);
-      let row = {
-        user_id:         userId,
-        title:           entry.title,
-        year:            entry.year,
-        letterboxd_url:  entry.letterboxd_url,
-        tmdb_id:         null,
-        poster_url:      null,
-        runtime_minutes: null,
-        synopsis:        null,
-        genres:          null,
-        youtube_id:      null,
-        status:          'unmatched',
+      const meta = await resolveTmdbMeta(entry);
+      const rating = ratingsMap[entry.letterboxd_url] ?? null;
+      if (rating != null) ratingsApplied++;
+      const row = {
+        user_id:        userId,
+        title:          entry.title,
+        year:           entry.year,
+        letterboxd_url: entry.letterboxd_url,
+        user_rating:    rating,
+        ...(meta || NULL_META),
+        status:         meta ? 'ready' : 'unmatched',
       };
-      if (hit?.id) {
-        const details = await fetchTmdbDetails(hit.id);
-        const trailer =
-          details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
-          details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
-          details?.videos?.results?.find(v => v.site === 'YouTube');
-        // credits came back in the same append_to_response call
-        const director = details?.credits?.crew?.find(p => p.job === 'Director')?.name || null;
-        const castList = (details?.credits?.cast || []).slice(0, 5).map(p => p.name);
-        row = {
-          ...row,
-          tmdb_id:         hit.id,
-          poster_url:      details?.poster_path
-            ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
-            : (hit.poster_path ? `https://image.tmdb.org/t/p/w500${hit.poster_path}` : null),
-          // TMDB returns `runtime` (minutes int); our column is runtime_minutes
-          runtime_minutes: details?.runtime || null,
-          synopsis:        details?.overview || hit.overview || null,
-          genres:          details?.genres?.map(g => g.name) || null,
-          director:        director,
-          cast_list:       castList.length ? castList : null,
-          youtube_id:      trailer?.key || null,
-          status:          'ready',
-        };
-        matched++;
-      }
+      if (meta) watchlistMatched++;
       const { error } = await supabase
         .from('user_films')
         .upsert(row, { onConflict: 'user_id,letterboxd_url' });
-      if (error) console.error('[import] upsert failed:', entry.title, error.message);
+      if (error) console.error('[import] user_films upsert failed:', entry.title, error.message);
     } catch (e) {
-      console.error('[import] film failed:', entry.title, e.message);
+      console.error('[import] watchlist film failed:', entry.title, e.message);
     } finally {
-      processed++;
-      if (processed % 3 === 0 || processed === entries.length) {
-        await writeProgress(entry.title).catch(() => {});
-      }
+      await tick(entry.title);
     }
   })));
+
+  // Phase 2 — watched → user_watched
+  await Promise.all(watchedEntries.map(entry => limitTmdb(async () => {
+    try {
+      const meta   = await resolveTmdbMeta(entry);
+      const review = reviewsMap[entry.letterboxd_url] || null;
+      const rating = ratingsMap[entry.letterboxd_url] ?? review?.rating ?? null;
+      if (rating != null) ratingsApplied++;
+      const row = {
+        user_id:        userId,
+        title:          entry.title,
+        year:           entry.year,
+        letterboxd_url: entry.letterboxd_url,
+        user_rating:    rating,
+        watched_date:   review?.watchedDate || entry.logged_date || null,
+        review:         review?.review || null,
+        ...(meta || NULL_META),
+      };
+      if (meta) watchedMatched++;
+      const { error } = await supabase
+        .from('user_watched')
+        .upsert(row, { onConflict: 'user_id,letterboxd_url' });
+      if (error) console.error('[import] user_watched upsert failed:', entry.title, error.message);
+    } catch (e) {
+      console.error('[import] watched film failed:', entry.title, e.message);
+    } finally {
+      await tick(entry.title);
+    }
+  })));
+
+  console.log(
+    `[import] complete — watchlist: ${watchlistEntries.length}, ` +
+    `watched: ${watchedEntries.length}, ratings applied: ${ratingsApplied}`
+  );
 
   await supabase.from('imports').update({
     status:          'complete',
     processed_count: processed,
-    matched_count:   matched,
+    matched_count:   watchlistMatched + watchedMatched,
   }).eq('id', importId);
 }
 
@@ -613,31 +702,40 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   let entries;
+  let watchedEntries = [];
+  let ratingsMap = {};
+  let reviewsMap = {};
   let extractedUsername = null;
   try {
     const dir = await unzipper.Open.buffer(req.file.buffer);
-    // watchlist.csv lives at the root of the export, but some users zip it
-    // inside a folder — match either way.
-    const wl = dir.files.find(f =>
-      f.path === 'watchlist.csv' || f.path.endsWith('/watchlist.csv')
-    );
-    if (!wl) return res.status(400).json({ error: 'watchlist.csv not found in ZIP' });
-    const csvBuf = await wl.buffer();
-    entries = parseWatchlistCsv(csvBuf.toString('utf8'));
+    // CSVs live at the export root, but some users zip inside a folder —
+    // match either way.
+    const findCsv = (name) => dir.files.find(f =>
+      f.path === name || f.path.endsWith(`/${name}`));
+    const readCsv = async (name) => {
+      const f = findCsv(name);
+      if (!f) return null;
+      try { return (await f.buffer()).toString('utf8'); }
+      catch (e) { console.error(`[import] ${name} read failed:`, e.message); return null; }
+    };
 
-    // Letterboxd exports also include profile.csv with the user's username.
-    // Pull it so we can populate profiles.letterboxd_username without the
-    // user having to type it in.
-    const profileEntry = dir.files.find(f =>
-      f.path === 'profile.csv' || f.path.endsWith('/profile.csv')
-    );
-    if (profileEntry) {
+    const wlText = await readCsv('watchlist.csv');
+    if (!wlText) return res.status(400).json({ error: 'watchlist.csv not found in ZIP' });
+    entries = parseWatchlistCsv(wlText);
+
+    // watched.csv / ratings.csv / reviews.csv are optional — degrade gracefully
+    const watchedText = await readCsv('watched.csv');
+    if (watchedText) watchedEntries = parseWatchlistCsv(watchedText); // same shape
+    const ratingsText = await readCsv('ratings.csv');
+    if (ratingsText) ratingsMap = parseRatingsCsv(ratingsText);
+    const reviewsText = await readCsv('reviews.csv');
+    if (reviewsText) reviewsMap = parseReviewsCsv(reviewsText);
+
+    // profile.csv → username (cosmetic; avoids the user typing it in)
+    const profileText = await readCsv('profile.csv');
+    if (profileText) {
       try {
-        const profileBuf = await profileEntry.buffer();
-        const profileRows = parseCsv(profileBuf.toString('utf8'), {
-          columns: true, skip_empty_lines: true, trim: true, relax_quotes: true,
-          relax_column_count: true,
-        });
+        const profileRows = parseCsvRows(profileText);
         extractedUsername =
           profileRows[0]?.Username || profileRows[0]?.username || null;
       } catch (e) {
@@ -649,9 +747,11 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
     return res.status(400).json({ error: 'Invalid Letterboxd export file' });
   }
 
-  if (entries.length === 0) {
-    return res.status(400).json({ error: 'watchlist.csv is empty' });
+  if (entries.length === 0 && watchedEntries.length === 0) {
+    return res.status(400).json({ error: 'No films found in the export' });
   }
+
+  const totalCount = entries.length + watchedEntries.length;
 
   // Update the Letterboxd username on the user's profile if the export
   // included one (cosmetic — used for display in account / sheet only).
@@ -669,7 +769,7 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
     .insert({
       user_id:         req.user.id,
       status:          'processing',
-      total_count:     entries.length,
+      total_count:     totalCount,
       processed_count: 0,
       matched_count:   0,
     })
@@ -682,14 +782,19 @@ app.post('/import/letterboxd', requireAuth, upload.single('file'), async (req, r
   }
 
   // Fire-and-forget — frontend polls /import/:importId/status for progress
-  processImport(req.user.id, importRow.id, entries).catch(async (e) => {
+  processImport(req.user.id, importRow.id, {
+    watchlistEntries: entries,
+    watchedEntries,
+    ratingsMap,
+    reviewsMap,
+  }).catch(async (e) => {
     console.error('[import] background processing crashed:', e);
     await supabase.from('imports')
       .update({ status: 'failed', error_message: e.message || 'unknown' })
       .eq('id', importRow.id);
   });
 
-  res.json({ importId: importRow.id, totalCount: entries.length });
+  res.json({ importId: importRow.id, totalCount });
 });
 
 // GET /import/:importId/status — polling endpoint for the progress overlay
@@ -740,6 +845,7 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
     genres:          f.genres,
     director:        f.director,
     cast:            f.cast_list,
+    user_rating:     f.user_rating,
     youtube_id:      f.youtube_id,
     status:          f.status,
   }));
@@ -913,6 +1019,101 @@ app.get('/api/explore/similar', requireAuth, async (req, res) => {
     },
     results: cards,
   });
+});
+
+// Shared: search for a person by name, pull their movie_credits, and run
+// `pick` over the response to select+order the relevant films. Returns up to
+// 20 shaped cards annotated with in_watchlist. Used by director + actor below.
+async function personFilmography(userId, name, excludeId, pick) {
+  const search = await tmdbFetch('/search/person', { query: name });
+  if (search.error) return { error: search.error, status: search.status };
+  const person = search.data?.results?.[0];
+  if (!person) return { person: null, results: [] };
+
+  const credits = await tmdbFetch(`/person/${person.id}/movie_credits`);
+  if (credits.error) return { error: credits.error, status: credits.status };
+
+  const seen = new Set();
+  const cards = [];
+  for (const m of pick(credits.data || {})) {
+    if (!m.id || m.id === excludeId || seen.has(m.id)) continue;
+    seen.add(m.id);
+    const card = shapeTmdbCard(m);
+    if (card) cards.push(card);
+    if (cards.length >= 20) break;
+  }
+  const results = await annotateWatchlist(userId, cards);
+  return { person: { name: person.name, id: person.id }, results };
+}
+
+// GET /api/explore/director?name=...&excludeTmdbId=...
+app.get('/api/explore/director', requireAuth, async (req, res) => {
+  try {
+    const name = (req.query.name || '').toString().trim();
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const excludeId = parseInt(req.query.excludeTmdbId, 10) || null;
+    const out = await personFilmography(req.user.id, name, excludeId, data =>
+      (data.crew || [])
+        .filter(f => f.job === 'Director')
+        .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)));
+    if (out.error) return res.status(out.status || 500).json({ error: out.error });
+    res.json(out);
+  } catch (err) {
+    console.error('[explore/director] failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/explore/actor?name=...&excludeTmdbId=...
+app.get('/api/explore/actor', requireAuth, async (req, res) => {
+  try {
+    const name = (req.query.name || '').toString().trim();
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const excludeId = parseInt(req.query.excludeTmdbId, 10) || null;
+    const out = await personFilmography(req.user.id, name, excludeId, data =>
+      (data.cast || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)));
+    if (out.error) return res.status(out.status || 500).json({ error: out.error });
+    res.json(out);
+  } catch (err) {
+    console.error('[explore/actor] failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/user-watched — the user's watched films (from the Letterboxd export)
+app.get('/api/user-watched', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_watched')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('watched_date', { ascending: false, nullsFirst: false });
+    if (error) {
+      console.error('[user-watched] select failed:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    const films = (data || []).map(f => ({
+      title:          f.title,
+      year:           f.year,
+      url:            f.letterboxd_url,
+      poster:         f.poster_url,
+      userRating:     f.user_rating,
+      watchedDate:    f.watched_date,
+      review:         f.review,
+      director:       f.director,
+      cast:           f.cast_list,
+      genres:         f.genres,
+      synopsis:       f.synopsis,
+      runtimeMinutes: f.runtime_minutes,
+      youtubeId:      f.youtube_id,
+      tmdbId:         f.tmdb_id,
+    }));
+    console.log(`[user-watched] ${req.user.id} → ${films.length} rows`);
+    res.json(films);
+  } catch (err) {
+    console.error('[user-watched] failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/user-films/add  body: { tmdb_id: 12345 }

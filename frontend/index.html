@@ -173,6 +173,8 @@
         </div>
       </div>
 
+      <p class="screening-your-rating" id="screeningYourRating" hidden></p>
+
       <div class="stat-grid">
         <div class="stat">
           <span class="stat-label">Mood</span>
@@ -541,33 +543,80 @@
         <span style="width:30px;"></span>
       </nav>
 
-      <!-- RECENTLY SUGGESTED (horizontal scroll) -->
-      <div id="librarySuggestedSection" class="library-suggested-section" hidden>
-        <div class="eyebrow eyebrow-sm"><span class="rule"></span>Recently suggested</div>
-        <div class="library-suggested-row" id="librarySuggestedRow"></div>
+      <!-- TAB BAR -->
+      <div class="library-tabs" id="libraryTabs">
+        <button class="library-tab active" data-tab="watchlist">Watchlist</button>
+        <button class="library-tab" data-tab="watched">Watched</button>
       </div>
 
-      <!-- FULL WATCHLIST BROWSER -->
-      <div class="eyebrow eyebrow-sm" style="margin-top:24px;"><span class="rule"></span>Your watchlist</div>
-
-      <input type="search" id="librarySearch" class="library-search"
-             placeholder="Search your films…"
-             autocomplete="off" autocapitalize="off" spellcheck="false">
-
-      <div class="library-controls">
-        <div class="library-count-group">
-          <span class="library-count" id="libraryCount"></span>
-          <button id="libraryRefreshBtn" class="library-refresh-btn" aria-label="Refresh library">↻</button>
+      <!-- WATCHLIST TAB -->
+      <div id="libraryWatchlistTab" class="library-tab-panel">
+        <!-- RECENTLY SUGGESTED (horizontal scroll) -->
+        <div id="librarySuggestedSection" class="library-suggested-section" hidden>
+          <div class="eyebrow eyebrow-sm"><span class="rule"></span>Recently suggested</div>
+          <div class="library-suggested-row" id="librarySuggestedRow"></div>
         </div>
-        <div class="library-sort" id="librarySort">
-          <button class="library-sort-btn active" data-sort="added">Recently Added</button>
-          <button class="library-sort-btn" data-sort="az">A–Z</button>
-          <button class="library-sort-btn" data-sort="year">Year</button>
+
+        <input type="search" id="librarySearch" class="library-search"
+               placeholder="Search your films…"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+
+        <div class="library-controls">
+          <div class="library-count-group">
+            <span class="library-count" id="libraryCount"></span>
+            <button id="libraryRefreshBtn" class="library-refresh-btn" aria-label="Refresh library">↻</button>
+          </div>
+          <div class="library-sort" id="librarySort">
+            <button class="library-sort-btn active" data-sort="added">Recently Added</button>
+            <button class="library-sort-btn" data-sort="az">A–Z</button>
+            <button class="library-sort-btn" data-sort="year">Year</button>
+          </div>
         </div>
+
+        <div class="library-grid" id="libraryGrid"></div>
+        <p id="libraryStatus" class="status"></p>
       </div>
 
-      <div class="library-grid" id="libraryGrid"></div>
-      <p id="libraryStatus" class="status"></p>
+      <!-- WATCHED TAB -->
+      <div id="libraryWatchedTab" class="library-tab-panel" hidden>
+        <input type="search" id="watchedSearch" class="library-search"
+               placeholder="Search watched films…"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+
+        <div class="library-controls">
+          <div class="library-count-group">
+            <span class="library-count" id="watchedCount"></span>
+            <button id="watchedRefreshBtn" class="library-refresh-btn" aria-label="Refresh watched">↻</button>
+          </div>
+          <div class="library-sort" id="watchedSort">
+            <button class="library-sort-btn active" data-sort="watched">Recently Watched</button>
+            <button class="library-sort-btn" data-sort="rating">Highest Rated</button>
+            <button class="library-sort-btn" data-sort="az">A–Z</button>
+          </div>
+        </div>
+
+        <div class="library-grid" id="watchedGrid"></div>
+        <p id="watchedStatus" class="status"></p>
+      </div>
+    </section>
+
+    <!-- DISCOVER RESULTS (from a watched film's discovery buttons) -->
+    <section id="discover" class="screen" hidden>
+      <nav class="result-topbar">
+        <button class="icon-btn" id="discoverBackBtn" aria-label="Back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#ece4d3" stroke-width="1.3">
+            <path d="M10 3 L5 8 L10 13"/>
+          </svg>
+        </button>
+        <span class="result-title">Discover</span>
+        <span style="width:30px;"></span>
+      </nav>
+
+      <div class="eyebrow"><span class="rule"></span>Discover</div>
+      <h1 class="headline" id="discoverHeadline" style="font-size:22px;">Films like this</h1>
+
+      <div id="discoverResults" class="explore-grid"></div>
+      <p id="discoverStatus" class="status"></p>
     </section>
 
   </main>
@@ -643,6 +692,7 @@
         <div class="film-sheet-headmeta">
           <h2 class="film-sheet-title" id="filmSheetTitle"></h2>
           <p class="film-sheet-year" id="filmSheetYear"></p>
+          <p class="film-sheet-rating" id="filmSheetRating" hidden></p>
           <div class="film-sheet-genres" id="filmSheetGenres"></div>
         </div>
       </div>
@@ -661,7 +711,18 @@
         </div>
       </div>
       <p class="film-sheet-synopsis" id="filmSheetSynopsis"></p>
+
+      <div class="film-sheet-review" id="filmSheetReview" hidden>
+        <div class="eyebrow eyebrow-sm"><span class="rule"></span>Your review</div>
+        <p class="film-sheet-review-text" id="filmSheetReviewText"></p>
+      </div>
+
       <button class="btn-primary" id="filmSheetPickBtn" style="width:100%;">Pick this film tonight</button>
+
+      <div class="film-sheet-discover" id="filmSheetDiscover" hidden>
+        <div class="eyebrow eyebrow-sm"><span class="rule"></span>Discover more</div>
+        <div id="filmSheetDiscoverBtns"></div>
+      </div>
     </div>
   </div>
 
