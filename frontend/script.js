@@ -755,6 +755,48 @@ function italiciseTitle(title) {
   return words.join(' ');
 }
 
+// Wire the screening poster to flip and reveal the trailer on tap.
+// The iframe is injected lazily on the flip (not at render) so the flip
+// gesture itself satisfies iOS's user-gesture requirement for autoplay.
+function setupPosterFlip(film) {
+  const flip = $('posterFlip');
+  if (!flip) return;
+  const slot = flip.querySelector('.trailer-embed-slot');
+  const hint = flip.querySelector('.flip-hint');
+
+  // Reset to front for the new film + tear down any previous trailer
+  flip.classList.remove('flipped');
+  slot.innerHTML = '';
+
+  const hasTrailer = !!film.youtube_id;
+  hint.style.display = hasTrailer ? 'flex' : 'none';
+  flip.style.cursor = hasTrailer ? 'pointer' : 'default';
+
+  flip.onclick = () => {
+    if (!hasTrailer) return;
+    const isFlipped = flip.classList.toggle('flipped');
+    if (isFlipped) {
+      // mute=1 + playsinline=1 keep iOS autoplay working under the flip tap
+      slot.innerHTML =
+        `<iframe src="https://www.youtube.com/embed/${film.youtube_id}` +
+        `?autoplay=1&mute=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1" ` +
+        `allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen ` +
+        `style="width:100%;height:100%;"></iframe>`;
+    } else {
+      slot.innerHTML = ''; // flipping back stops + frees the trailer
+    }
+  };
+}
+
+// Stop the trailer + reset the poster when leaving the screening screen.
+function resetPosterFlip() {
+  const flip = $('posterFlip');
+  if (!flip) return;
+  flip.classList.remove('flipped');
+  const slot = flip.querySelector('.trailer-embed-slot');
+  if (slot) slot.innerHTML = '';
+}
+
 async function pickFilm(opts = {}) {
   let pool = opts.ignoreFilters ? state.watchlist : getFilteredPool();
 
@@ -792,7 +834,7 @@ async function pickFilm(opts = {}) {
     ? state.selectedMood
     : (state.moodText.trim() ? 'Your own words' : 'Open');
 
-  $('resultPoster').src     = posterUrl || '';
+  $('resultPoster').src     = posterUrl || movie.poster || '';
   $('resultPoster').alt     = movie.title;
   $('resultTitle').innerHTML = italiciseTitle(movie.title);
   $('resultMeta').innerHTML  = [movie.year, 'Letterboxd'].filter(Boolean).join(' &nbsp;·&nbsp; ');
@@ -832,6 +874,17 @@ async function pickFilm(opts = {}) {
     synopsisEl.innerHTML = '';
   }
 
+  // Expanded credits block (director / runtime / cast)
+  $('screeningDirector').textContent = movie.director || 'Unknown';
+  $('screeningRuntime').textContent  = movie.runtime_minutes ? `${movie.runtime_minutes} min` : '—';
+  $('screeningCast').textContent     = (movie.cast && movie.cast.length)
+    ? movie.cast.join(', ')
+    : '—';
+
+  // Flip-to-trailer poster — injects the iframe on flip (the flip tap is the
+  // user gesture iOS requires for autoplay)
+  setupPosterFlip(movie);
+
   $('statMood').textContent = moodDisplay.charAt(0).toUpperCase() + moodDisplay.slice(1);
   $('statPace').textContent = state.runtime
     ? RUNTIME_OPTIONS.find(o => o.value === state.runtime).label
@@ -869,6 +922,7 @@ $('surpriseBtn').addEventListener('click', () => pickFilm({ ignoreFilters: true 
 $('anotherBtn').addEventListener('click',  () => pickFilm());
 
 $('backBtn').addEventListener('click', () => {
+  resetPosterFlip();
   setBgWarm(false);
   show('home');
   setProgrammeEyebrow();

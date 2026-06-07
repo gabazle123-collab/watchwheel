@@ -357,13 +357,95 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   font-family: var(--font-sans); font-size: 11px; letter-spacing: 0.22em;
   text-transform: uppercase; color: var(--ww-taupe-dim);
 }
-.poster-wrap {
-  width: 100%; aspect-ratio: 2/3; margin-bottom: 18px;
-  background: rgba(21,25,31,0.5); border-radius: 6px; overflow: hidden;
+/* ── Flip-to-trailer poster ────────────────────────────────────────────── */
+.poster-flip {
+  perspective: 1200px;
+  width: 100%;
+  aspect-ratio: 2/3;
+  margin-bottom: 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.poster-wrap img {
+.poster-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+.poster-flip.flipped .poster-flip-inner {
+  transform: rotateY(180deg);
+}
+.poster-front,
+.poster-back {
+  position: absolute;
+  inset: 0;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(21,25,31,0.5);
+}
+.poster-front .screening-poster {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  border-radius: 6px;
+}
+.poster-back {
+  transform: rotateY(180deg);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trailer-embed-slot { width: 100%; height: 100%; }
+.trailer-embed-slot iframe { display: block; border: 0; }
+.flip-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(10, 15, 20, 0.7);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ww-cream-dim);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+/* ── Screening credits (director / runtime / cast) ──────────────────────── */
+.screening-credits {
+  margin: 0 0 22px;
+}
+.credit-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ww-border);
+}
+.credit-row:first-child { border-top: 1px solid var(--ww-border); }
+.credit-label {
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ww-taupe-dim);
+}
+.credit-value {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ww-cream);
+  text-align: right;
 }
 .metaline {
   font-family: var(--font-sans); font-size: 10px; letter-spacing: 0.18em;

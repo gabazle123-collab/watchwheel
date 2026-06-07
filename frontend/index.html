@@ -133,8 +133,21 @@
         </button>
       </nav>
 
-      <div class="poster-wrap">
-        <img id="resultPoster" alt="">
+      <div class="poster-flip" id="posterFlip">
+        <div class="poster-flip-inner">
+          <div class="poster-front">
+            <img class="screening-poster" id="resultPoster" alt="">
+            <div class="flip-hint" id="flipHint">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
+                <path d="M4 3 L13 8 L4 13 Z"/>
+              </svg>
+              <span>Tap for trailer</span>
+            </div>
+          </div>
+          <div class="poster-back">
+            <div class="trailer-embed-slot"></div>
+          </div>
+        </div>
       </div>
 
       <div class="metaline" id="resultMeta"></div>
@@ -144,6 +157,21 @@
       <div class="pullquote" id="resultQuote"></div>
 
       <div class="synopsis" id="resultSynopsis" hidden></div>
+
+      <div class="screening-credits">
+        <div class="credit-row">
+          <span class="credit-label">Director</span>
+          <span class="credit-value" id="screeningDirector">—</span>
+        </div>
+        <div class="credit-row">
+          <span class="credit-label">Runtime</span>
+          <span class="credit-value" id="screeningRuntime">—</span>
+        </div>
+        <div class="credit-row">
+          <span class="credit-label">Cast</span>
+          <span class="credit-value" id="screeningCast">—</span>
+        </div>
+      </div>
 
       <div class="stat-grid">
         <div class="stat">

@@ -496,10 +496,11 @@ async function searchTmdb(title, year) {
 
 async function fetchTmdbDetails(tmdbId) {
   const apiKey = process.env.TMDB_API_KEY;
-  // append_to_response=videos folds details + videos into a single request
+  // append_to_response=videos,credits folds details + trailers + credits into
+  // a single request (one TMDB call instead of three)
   try {
     const res = await axios.get(
-      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${apiKey}&append_to_response=videos`,
+      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${apiKey}&append_to_response=videos,credits`,
       { validateStatus: () => true, timeout: 10000 },
     );
     if (res.status !== 200) return null;
@@ -566,6 +567,9 @@ async function processImport(userId, importId, entries) {
           details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
           details?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
           details?.videos?.results?.find(v => v.site === 'YouTube');
+        // credits came back in the same append_to_response call
+        const director = details?.credits?.crew?.find(p => p.job === 'Director')?.name || null;
+        const castList = (details?.credits?.cast || []).slice(0, 5).map(p => p.name);
         row = {
           ...row,
           tmdb_id:         hit.id,
@@ -576,6 +580,8 @@ async function processImport(userId, importId, entries) {
           runtime_minutes: details?.runtime || null,
           synopsis:        details?.overview || hit.overview || null,
           genres:          details?.genres?.map(g => g.name) || null,
+          director:        director,
+          cast_list:       castList.length ? castList : null,
           youtube_id:      trailer?.key || null,
           status:          'ready',
         };
@@ -732,6 +738,8 @@ app.get('/api/user-films', requireAuth, async (req, res) => {
     runtime_minutes: f.runtime_minutes,
     synopsis:        f.synopsis,
     genres:          f.genres,
+    director:        f.director,
+    cast:            f.cast_list,
     youtube_id:      f.youtube_id,
     status:          f.status,
   }));
@@ -862,7 +870,7 @@ app.post('/api/user-films/add', requireAuth, async (req, res) => {
     .maybeSingle();
   if (existing) return res.json({ ok: true, already_in_watchlist: true });
 
-  const details = await tmdbFetch(`/movie/${tmdbId}`, { append_to_response: 'videos' });
+  const details = await tmdbFetch(`/movie/${tmdbId}`, { append_to_response: 'videos,credits' });
   if (details.error) {
     return res.status(details.status || 500).json({ error: details.error });
   }
@@ -873,6 +881,8 @@ app.post('/api/user-films/add', requireAuth, async (req, res) => {
     d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
     d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
     d.videos?.results?.find(v => v.site === 'YouTube');
+  const director = d.credits?.crew?.find(p => p.job === 'Director')?.name || null;
+  const castList = (d.credits?.cast || []).slice(0, 5).map(p => p.name);
 
   const row = {
     user_id:         req.user.id,
@@ -884,6 +894,8 @@ app.post('/api/user-films/add', requireAuth, async (req, res) => {
     runtime_minutes: d.runtime || null,
     synopsis:        d.overview || null,
     genres:          (d.genres || []).map(g => g.name),
+    director:        director,
+    cast_list:       castList.length ? castList : null,
     youtube_id:      trailer?.key || null,
     status:          'ready',
     added_via:       'explore',
