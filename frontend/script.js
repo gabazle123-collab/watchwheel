@@ -817,7 +817,17 @@ async function pickFilm(opts = {}) {
   await new Promise(r => setTimeout(r, 1100));
 
   const movie = pool[Math.floor(Math.random() * pool.length)];
+  $('homeStatus').textContent = '';
+  await showScreeningFor(movie);
+}
+
+// Render the screening result for a specific film. Shared by the picker
+// (random choice) and the Library (direct "pick this film" / suggested tap).
+async function showScreeningFor(movie) {
+  if (!movie) return;
   state.currentMovie = movie;
+
+  logo.classList.add('spinning');
 
   let posterUrl = null;
   let tagline   = null;
@@ -829,6 +839,9 @@ async function pickFilm(opts = {}) {
     tagline   = data.tagline  || null;
     synopsis  = data.synopsis || null;
   } catch (e) {}
+  // Fall back to stored synopsis (e.g. Explore-added films have no scrapeable
+  // Letterboxd page yet) so the result is never blank.
+  if (!synopsis && movie.synopsis) synopsis = movie.synopsis;
 
   const moodDisplay = state.selectedMood
     ? state.selectedMood
@@ -1146,37 +1159,162 @@ function pollImport(importId) {
 }
 
 // ── Library ───────────────────────────────────────────────────────────────────
+//
+// Two sections: a horizontal "Recently suggested" row (last 6 from history)
+// and a full watchlist browser (poster grid + client-side search + sort +
+// "seen" indicator). Tapping a grid card opens a detail bottom sheet.
 
-function timeAgo(ts) {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d === 1) return 'yesterday';
-  if (d < 7)  return `${d}d ago`;
-  return `${Math.floor(d / 7)}w ago`;
+const libraryState = { search: '', sort: 'added' };
+
+// Resolve a history/suggested reference to the full user_films record so the
+// screening + detail sheet have director/cast/runtime/genres. Falls back to
+// the reference itself if the film isn't in the current watchlist.
+function findFilmFor(ref) {
+  if (!ref) return null;
+  const list = state.watchlist || [];
+  return (
+    (ref.url     && list.find(f => f.url === ref.url)) ||
+    (ref.tmdb_id && list.find(f => f.tmdb_id === ref.tmdb_id)) ||
+    (ref.title   && list.find(f =>
+      f.title === ref.title && String(f.year || '') === String(ref.year || ''))) ||
+    ref
+  );
 }
 
 function renderLibrary() {
-  const list = $('libraryList');
-  if (state.history.length === 0) {
-    list.innerHTML = '<div class="library-empty">No films programmed yet.</div>'; return;
-  }
-  list.innerHTML = state.history.map(item => `
-    <a class="library-row" href="${item.url}" target="_blank" rel="noopener">
-      ${item.poster
-        ? `<img class="thumb" src="${item.poster}" alt="">`
-        : `<div class="thumb"></div>`}
-      <div>
-        <div class="lib-title">${italiciseTitle(item.title)}</div>
-        <div class="lib-meta">${[item.year, item.mood].filter(Boolean).join(' · ')}</div>
-      </div>
-      <span class="lib-time">${timeAgo(item.when)}</span>
-    </a>`).join('');
+  renderSuggestedRow();
+  renderLibraryGrid();
 }
+
+function renderSuggestedRow() {
+  const section = $('librarySuggestedSection');
+  const row     = $('librarySuggestedRow');
+  const recent  = (state.history || []).slice(0, 6);
+  if (recent.length === 0) { section.hidden = true; row.innerHTML = ''; return; }
+  section.hidden = false;
+  row.innerHTML = recent.map((item, i) => {
+    const poster = item.poster || findFilmFor(item)?.poster || '';
+    return `
+      <div class="suggested-card" data-suggested="${i}">
+        <div class="suggested-poster"${poster ? ` style="background-image:url(${escAttr(poster)})"` : ''}></div>
+        <div class="suggested-title">${italiciseTitle(item.title)}</div>
+        ${item.year ? `<div class="suggested-year">${escapeHtml(String(item.year))}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function renderLibraryGrid() {
+  const grid = $('libraryGrid');
+  const all  = state.watchlist || [];
+
+  $('libraryCount').textContent =
+    all.length === 0 ? '' : `${all.length} film${all.length === 1 ? '' : 's'}`;
+
+  if (all.length === 0) {
+    grid.innerHTML = '<div class="library-empty">Your watchlist is empty. Import from Letterboxd or add films in Explore.</div>';
+    return;
+  }
+
+  // Filter by title (client-side, live)
+  const q = libraryState.search.trim().toLowerCase();
+  let films = q ? all.filter(f => (f.title || '').toLowerCase().includes(q)) : all.slice();
+
+  // Sort. 'added' keeps the API order (created_at desc).
+  if (libraryState.sort === 'az') {
+    films.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  } else if (libraryState.sort === 'year') {
+    films.sort((a, b) => (parseInt(b.year) || 0) - (parseInt(a.year) || 0));
+  }
+
+  if (films.length === 0) {
+    grid.innerHTML = '<div class="library-empty">No films match your search.</div>';
+    return;
+  }
+
+  // "Seen" = the film has appeared in the suggestion history
+  const seen = new Set((state.history || []).map(h => h.url).filter(Boolean));
+  const seenCheck = `<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7 L5.5 10 L11.5 4"/></svg>`;
+
+  grid.innerHTML = films.map(f => {
+    const isSeen = seen.has(f.url);
+    const genre  = Array.isArray(f.genres) && f.genres.length ? f.genres[0] : null;
+    return `
+      <div class="library-card" data-url="${escAttr(f.url)}">
+        <div class="lib-card-poster"${f.poster ? ` style="background-image:url(${escAttr(f.poster)})"` : ''}>
+          ${isSeen ? `<div class="lib-seen-overlay">${seenCheck}</div>` : ''}
+        </div>
+        <div class="lib-card-title">${italiciseTitle(f.title)}</div>
+        <div class="lib-card-year">${f.year ? escapeHtml(String(f.year)) : '—'}</div>
+        ${genre ? `<span class="genre-pill">${escapeHtml(genre)}</span>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// ── Film detail bottom sheet ──
+function openFilmSheet(film) {
+  if (!film) return;
+  $('filmSheetPoster').src = film.poster || '';
+  $('filmSheetPoster').alt = film.title || '';
+  $('filmSheetTitle').innerHTML = italiciseTitle(film.title || '');
+  $('filmSheetYear').textContent = film.year ? String(film.year) : '';
+  $('filmSheetDirector').textContent = film.director || 'Unknown';
+  $('filmSheetRuntime').textContent  = film.runtime_minutes ? `${film.runtime_minutes} min` : '—';
+  $('filmSheetCast').textContent     = (film.cast && film.cast.length) ? film.cast.join(', ') : '—';
+  $('filmSheetSynopsis').textContent = film.synopsis || '';
+
+  const genres = Array.isArray(film.genres) ? film.genres : [];
+  $('filmSheetGenres').innerHTML = genres
+    .map(g => `<span class="genre-pill">${escapeHtml(g)}</span>`).join('');
+
+  $('filmSheetPickBtn').onclick = () => {
+    closeFilmSheet();
+    showScreeningFor(film);
+  };
+
+  $('filmSheetBackdrop').hidden = false;
+  $('filmSheet').hidden = false;
+}
+
+function closeFilmSheet() {
+  $('filmSheetBackdrop').hidden = true;
+  $('filmSheet').hidden = true;
+}
+
+$('filmSheetBackdrop').addEventListener('click', closeFilmSheet);
+
+// Grid card tap → open detail sheet
+$('libraryGrid').addEventListener('click', e => {
+  const card = e.target.closest('.library-card');
+  if (!card) return;
+  const film = findFilmFor({ url: card.dataset.url });
+  openFilmSheet(film);
+});
+
+// Suggested card tap → straight to the screening result
+$('librarySuggestedRow').addEventListener('click', e => {
+  const card = e.target.closest('.suggested-card');
+  if (!card) return;
+  const idx = parseInt(card.dataset.suggested, 10);
+  const ref = (state.history || [])[idx];
+  showScreeningFor(findFilmFor(ref));
+});
+
+// Live search
+$('librarySearch').addEventListener('input', e => {
+  libraryState.search = e.target.value;
+  renderLibraryGrid();
+});
+
+// Sort control
+$('librarySort').querySelectorAll('.library-sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (libraryState.sort === btn.dataset.sort) return;
+    libraryState.sort = btn.dataset.sort;
+    $('librarySort').querySelectorAll('.library-sort-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+    renderLibraryGrid();
+  });
+});
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
 
@@ -1210,6 +1348,17 @@ function renderExplore() {
     c.classList.toggle('active', !c.dataset.decade);
   });
   $('exploreResults').innerHTML = '';
+
+  // Reset the similar-to finder
+  similarState.query = '';
+  similarState.sourceId = null;
+  $('exploreSimilarSearch').value = '';
+  $('exploreDisambig').hidden = true;
+  $('exploreDisambig').innerHTML = '';
+  $('exploreSimilarHeader').hidden = true;
+  $('exploreSimilarResults').innerHTML = '';
+  $('exploreSimilarStatus').textContent = '';
+
   fetchExploreResults();
 }
 
@@ -1357,6 +1506,147 @@ $('exploreDecades').querySelectorAll('.explore-chip').forEach(chip => {
     });
     fetchExploreResults();
   });
+});
+
+// ── Explore: "similar to" recommendation finder ───────────────────────────────
+//
+// Flow: type a title → /api/explore/search returns up to 5 disambiguation
+// matches → tap the right one → /api/explore/similar returns up to 20 TMDB
+// recommendations as a poster grid, each with an add-to-watchlist button.
+
+const similarState = { query: '', sourceId: null };
+let similarSearchTimer = null;
+
+async function runSimilarSearch() {
+  const title = similarState.query.trim();
+  const disambig = $('exploreDisambig');
+  const status   = $('exploreSimilarStatus');
+
+  // New search supersedes any previous recommendation grid
+  $('exploreSimilarHeader').hidden = true;
+  $('exploreSimilarResults').innerHTML = '';
+
+  if (!title) {
+    disambig.hidden = true;
+    disambig.innerHTML = '';
+    status.textContent = '';
+    return;
+  }
+
+  status.textContent = 'Searching…';
+  logo.classList.add('spinning');
+  try {
+    const res = await apiFetch(`/api/explore/search?title=${encodeURIComponent(title)}`);
+    if (!res.ok) throw new Error(`search ${res.status}`);
+    const { results } = await res.json();
+    renderDisambig(results || []);
+    status.textContent = (results || []).length === 0 ? 'No films found by that name.' : '';
+  } catch (e) {
+    console.error('[similar] search failed:', e);
+    status.textContent = "Couldn't search. Try again?";
+  } finally {
+    logo.classList.remove('spinning');
+  }
+}
+
+function renderDisambig(results) {
+  const disambig = $('exploreDisambig');
+  if (results.length === 0) { disambig.hidden = true; disambig.innerHTML = ''; return; }
+  disambig.hidden = false;
+  disambig.innerHTML = results.map(f => `
+    <div class="disambig-row" data-tmdb-id="${f.tmdb_id}" data-title="${escAttr(f.title)}" data-year="${escAttr(String(f.year || ''))}">
+      <div class="disambig-poster"${f.poster_url ? ` style="background-image:url(${escAttr(f.poster_url)})"` : ''}></div>
+      <div class="disambig-info">
+        <div class="disambig-title">${italiciseTitle(f.title)}</div>
+        <div class="disambig-year">${f.year || '—'}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function loadSimilar(tmdbId, label) {
+  similarState.sourceId = tmdbId;
+  $('exploreDisambig').hidden = true;
+  const header  = $('exploreSimilarHeader');
+  const results = $('exploreSimilarResults');
+  const status  = $('exploreSimilarStatus');
+
+  results.innerHTML = '';
+  status.textContent = 'Finding similar films…';
+  logo.classList.add('spinning');
+  try {
+    const res = await apiFetch(`/api/explore/similar?tmdbId=${encodeURIComponent(tmdbId)}`);
+    if (!res.ok) throw new Error(`similar ${res.status}`);
+    const data = await res.json();
+    const srcTitle = data.source?.title || label || 'that film';
+    header.textContent = `Because you searched ${srcTitle}`;
+    header.hidden = false;
+    renderSimilarGrid(data.results || []);
+    status.textContent = (data.results || []).length === 0
+      ? 'No recommendations found for that film.' : '';
+  } catch (e) {
+    console.error('[similar] load failed:', e);
+    status.textContent = "Couldn't load recommendations. Try again?";
+  } finally {
+    logo.classList.remove('spinning');
+  }
+}
+
+function renderSimilarGrid(films) {
+  const results = $('exploreSimilarResults');
+  results.innerHTML = films.map(f => `
+    <div class="explore-grid-card">
+      <div class="grid-poster"${f.poster_url ? ` style="background-image:url(${escAttr(f.poster_url)})"` : ''}></div>
+      <div class="grid-title">${italiciseTitle(f.title)}</div>
+      <div class="grid-year">${f.year || '—'}</div>
+      ${f.in_watchlist
+        ? `<button class="btn-add-watchlist in-watchlist" disabled>✓ In your watchlist</button>`
+        : `<button class="btn-add-watchlist" data-add="${f.tmdb_id}">+ Add to watchlist</button>`}
+    </div>`).join('');
+}
+
+async function addToWatchlist(tmdbId, btn) {
+  if (!tmdbId) return;
+  btn.textContent = 'Adding…';
+  btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/user-films/add', {
+      method: 'POST',
+      body:   JSON.stringify({ tmdbId }),
+    });
+    if (!res.ok) throw new Error(`add ${res.status}`);
+    btn.textContent = '✓ In your watchlist';
+    btn.classList.add('in-watchlist');
+    refreshWatchlist(); // background — picker + library pick it up immediately
+  } catch (e) {
+    console.error('[similar] add failed:', e);
+    btn.textContent = '+ Add to watchlist';
+    btn.disabled = false;
+  }
+}
+
+// Debounced similar-to search
+$('exploreSimilarSearch').addEventListener('input', e => {
+  similarState.query = e.target.value;
+  clearTimeout(similarSearchTimer);
+  similarSearchTimer = setTimeout(runSimilarSearch, 400);
+});
+
+// Pick a disambiguation match → load recommendations
+$('exploreDisambig').addEventListener('click', e => {
+  const row = e.target.closest('.disambig-row');
+  if (!row) return;
+  const tmdbId = parseInt(row.dataset.tmdbId, 10);
+  const label  = row.dataset.year
+    ? `${row.dataset.title} (${row.dataset.year})`
+    : row.dataset.title;
+  loadSimilar(tmdbId, label);
+});
+
+// Add a recommendation to the watchlist (delegated)
+$('exploreSimilarResults').addEventListener('click', e => {
+  const btn = e.target.closest('.btn-add-watchlist[data-add]');
+  if (!btn) return;
+  addToWatchlist(parseInt(btn.dataset.add, 10), btn);
 });
 
 // ── Trailers ──────────────────────────────────────────────────────────────────

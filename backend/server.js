@@ -850,12 +850,78 @@ app.get('/api/explore', requireAuth, async (req, res) => {
   res.json({ films, page });
 });
 
+// ─── Explore: "similar to" recommendation finder ─────────────────────────────
+//
+// Two-step flow:
+//   1. GET /api/explore/search?title=...   → up to 5 disambiguation matches
+//   2. GET /api/explore/similar?tmdbId=... → up to 20 TMDB recommendations,
+//      each annotated with whether it's already in the user's watchlist.
+
+// Annotate a list of TMDB cards with in_watchlist flags via one bulk lookup.
+async function annotateWatchlist(userId, cards) {
+  const tmdbIds = cards.map(c => c.tmdb_id).filter(Boolean);
+  if (tmdbIds.length === 0) return cards.map(c => ({ ...c, in_watchlist: false }));
+  const { data } = await supabase
+    .from('user_films')
+    .select('tmdb_id')
+    .eq('user_id', userId)
+    .in('tmdb_id', tmdbIds);
+  const have = new Set((data || []).map(r => r.tmdb_id));
+  return cards.map(c => ({ ...c, in_watchlist: have.has(c.tmdb_id) }));
+}
+
+app.get('/api/explore/search', requireAuth, async (req, res) => {
+  const title = (req.query.title || '').toString().trim();
+  if (!title) return res.status(400).json({ error: 'title required' });
+
+  const result = await tmdbFetch('/search/movie', {
+    query: title,
+    include_adult: 'false',
+  });
+  if (result.error) return res.status(result.status || 500).json({ error: result.error });
+
+  const results = (result.data?.results || [])
+    .slice(0, 5)
+    .map(shapeTmdbCard)
+    .filter(Boolean);
+  res.json({ results });
+});
+
+app.get('/api/explore/similar', requireAuth, async (req, res) => {
+  const tmdbId = parseInt(req.query.tmdbId ?? req.query.tmdb_id, 10);
+  if (!tmdbId) return res.status(400).json({ error: 'tmdbId required' });
+
+  // Recommendations + source details in parallel
+  const [recRes, srcRes] = await Promise.all([
+    tmdbFetch(`/movie/${tmdbId}/recommendations`),
+    tmdbFetch(`/movie/${tmdbId}`),
+  ]);
+  if (recRes.error) return res.status(recRes.status || 500).json({ error: recRes.error });
+
+  let cards = (recRes.data?.results || [])
+    .slice(0, 20)
+    .map(shapeTmdbCard)
+    .filter(Boolean);
+  cards = await annotateWatchlist(req.user.id, cards);
+
+  const src = srcRes.data || {};
+  res.json({
+    source: {
+      tmdb_id: tmdbId,
+      title:   src.title || null,
+      year:    src.release_date ? Number(src.release_date.slice(0, 4)) : null,
+    },
+    results: cards,
+  });
+});
+
 // POST /api/user-films/add  body: { tmdb_id: 12345 }
 // Adds a single film to the user's watchlist. Fetches full TMDB details
 // (including videos for the trailer key) so the picker + trailers feed
 // have everything they need without a follow-up backfill.
 app.post('/api/user-films/add', requireAuth, async (req, res) => {
-  const tmdbId = parseInt(req.body?.tmdb_id, 10);
+  // Accept either tmdb_id (Explore browse cards) or tmdbId (similar-to flow).
+  const tmdbId = parseInt(req.body?.tmdb_id ?? req.body?.tmdbId, 10);
   if (!tmdbId) return res.status(400).json({ error: 'tmdb_id required' });
 
   // App-level dedup on (user_id, tmdb_id). The existing unique index is on
