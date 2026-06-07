@@ -555,7 +555,10 @@
              autocomplete="off" autocapitalize="off" spellcheck="false">
 
       <div class="library-controls">
-        <span class="library-count" id="libraryCount"></span>
+        <div class="library-count-group">
+          <span class="library-count" id="libraryCount"></span>
+          <button id="libraryRefreshBtn" class="library-refresh-btn" aria-label="Refresh library">↻</button>
+        </div>
         <div class="library-sort" id="librarySort">
           <button class="library-sort-btn active" data-sort="added">Recently Added</button>
           <button class="library-sort-btn" data-sort="az">A–Z</button>

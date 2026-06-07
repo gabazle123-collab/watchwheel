@@ -1498,9 +1498,25 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
 }
+.library-count-group { display: flex; align-items: center; gap: 4px; }
 .library-count {
   font-family: var(--font-sans); font-size: 9px; letter-spacing: 0.18em;
   text-transform: uppercase; color: var(--ww-taupe-dim);
+}
+.library-refresh-btn {
+  background: transparent;
+  border: none;
+  color: var(--ww-taupe-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s, transform 0.3s;
+}
+.library-refresh-btn:active {
+  color: var(--ww-amber);
+  transform: rotate(180deg);
 }
 .library-sort { display: flex; gap: 6px; }
 .library-sort-btn {

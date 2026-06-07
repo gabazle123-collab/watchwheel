@@ -37,6 +37,9 @@ const state = {
   runtime:       null,
   history:       JSON.parse(localStorage.getItem('ww_history') || '[]'),
   currentMovie:  null,
+  // ui
+  currentScreen:       null,
+  libraryNeedsRefresh: false,
   // wizard
   wizUsername:    '',
   wizDigestOptIn: true,
@@ -74,6 +77,7 @@ const ALL_SCREENS = [
 ];
 
 function show(screenId) {
+  state.currentScreen = screenId;
   ALL_SCREENS.forEach(id => {
     const el = $(id);
     if (el) el.hidden = (id !== screenId);
@@ -85,6 +89,8 @@ function show(screenId) {
   showBottomNav(screenId);
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
+
+function currentScreen() { return state.currentScreen; }
 
 // ── Bottom nav ────────────────────────────────────────────────────────────────
 
@@ -1184,6 +1190,7 @@ function findFilmFor(ref) {
 function renderLibrary() {
   renderSuggestedRow();
   renderLibraryGrid();
+  state.libraryNeedsRefresh = false; // consumed
 }
 
 function renderSuggestedRow() {
@@ -1314,6 +1321,20 @@ $('librarySort').querySelectorAll('.library-sort-btn').forEach(btn => {
       b.classList.toggle('active', b === btn));
     renderLibraryGrid();
   });
+});
+
+// Manual refresh — re-pull user_films and re-render, with a spin animation
+$('libraryRefreshBtn').addEventListener('click', async () => {
+  const btn = $('libraryRefreshBtn');
+  btn.style.transform  = 'rotate(360deg)';
+  btn.style.transition = 'transform 0.5s ease';
+  await refreshWatchlist();
+  await loadUserHistory().catch(() => {});
+  renderLibrary();
+  setTimeout(() => {
+    btn.style.transform  = '';
+    btn.style.transition = '';
+  }, 500);
 });
 
 $('libBackBtn').addEventListener('click', () => { show('home'); setProgrammeEyebrow(); });
@@ -1460,8 +1481,8 @@ async function addExploreFilm(btn) {
     const data = await res.json();
     btn.textContent = data.already_in_watchlist ? '✓ Already in watchlist' : '✓ Added';
     btn.classList.add('added');
-    // Background refresh so the picker + trailers feed pick this film up
-    refreshWatchlist();
+    // Refresh state.watchlist + the Library so the new film shows everywhere
+    await syncLibraryAfterAdd();
   } catch (e) {
     console.error('[explore] add failed:', e);
     btn.disabled    = false;
@@ -1604,6 +1625,16 @@ function renderSimilarGrid(films) {
     </div>`).join('');
 }
 
+// After a successful add: pull the fresh watchlist into state, then update
+// the Library — immediately if it's the visible screen, otherwise flag it so
+// the next visit re-renders. renderLibrary() reads from state.watchlist, so
+// the new film appears in the grid once this resolves.
+async function syncLibraryAfterAdd() {
+  await refreshWatchlist();           // updates state.watchlist
+  state.libraryNeedsRefresh = true;
+  if (currentScreen() === 'library') renderLibrary(); // clears the flag
+}
+
 async function addToWatchlist(tmdbId, btn) {
   if (!tmdbId) return;
   btn.textContent = 'Adding…';
@@ -1616,7 +1647,7 @@ async function addToWatchlist(tmdbId, btn) {
     if (!res.ok) throw new Error(`add ${res.status}`);
     btn.textContent = '✓ In your watchlist';
     btn.classList.add('in-watchlist');
-    refreshWatchlist(); // background — picker + library pick it up immediately
+    await syncLibraryAfterAdd();
   } catch (e) {
     console.error('[similar] add failed:', e);
     btn.textContent = '+ Add to watchlist';
