@@ -72,13 +72,14 @@
         <div id="chipsBlock" class="chips-block">
           <div class="eyebrow eyebrow-sm"><span class="rule"></span>Or borrow a mood</div>
           <div class="chips" id="moodChips">
-            <button class="chip" data-mood="slow burn">Slow burn</button>
-            <button class="chip" data-mood="sun-drenched">Sun-drenched</button>
-            <button class="chip" data-mood="noir">Noir</button>
-            <button class="chip" data-mood="melancholy">Melancholy</button>
-            <button class="chip" data-mood="first date">First date</button>
-            <button class="chip" data-mood="wintry">Wintry</button>
+            <button class="chip" data-mood="Slow burn">Slow burn</button>
+            <button class="chip" data-mood="Sun-drenched">Sun-drenched</button>
+            <button class="chip" data-mood="Noir">Noir</button>
+            <button class="chip" data-mood="Melancholy">Melancholy</button>
+            <button class="chip" data-mood="First date">First date</button>
+            <button class="chip" data-mood="Wintry">Wintry</button>
           </div>
+          <p class="mood-count" id="moodCount"></p>
         </div>
       </div>
 
@@ -576,6 +577,9 @@
       <button class="import-dismiss" id="importDismiss" hidden>Close</button>
     </div>
   </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" aria-live="polite" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="script.js"></script>
