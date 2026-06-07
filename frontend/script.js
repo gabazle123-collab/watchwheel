@@ -1471,13 +1471,18 @@ async function addExploreFilm(btn) {
 
   btn.disabled    = true;
   btn.textContent = 'Adding…';
+  btn.classList.remove('add-error');
 
   try {
     const res = await apiFetch('/api/user-films/add', {
       method: 'POST',
       body:   JSON.stringify({ tmdb_id: tmdbId }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    console.log('[add] response:', res);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+    }
     const data = await res.json();
     btn.textContent = data.already_in_watchlist ? '✓ Already in watchlist' : '✓ Added';
     btn.classList.add('added');
@@ -1485,8 +1490,9 @@ async function addExploreFilm(btn) {
     await syncLibraryAfterAdd();
   } catch (e) {
     console.error('[explore] add failed:', e);
+    btn.textContent = 'Failed — tap to retry';
     btn.disabled    = false;
-    btn.textContent = '+ Add to watchlist';
+    btn.classList.add('add-error');
   }
 }
 
@@ -1639,19 +1645,25 @@ async function addToWatchlist(tmdbId, btn) {
   if (!tmdbId) return;
   btn.textContent = 'Adding…';
   btn.disabled = true;
+  btn.classList.remove('add-error');
   try {
     const res = await apiFetch('/api/user-films/add', {
       method: 'POST',
       body:   JSON.stringify({ tmdbId }),
     });
-    if (!res.ok) throw new Error(`add ${res.status}`);
+    console.log('[add] response:', res);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`add ${res.status}: ${body.slice(0, 300)}`);
+    }
     btn.textContent = '✓ In your watchlist';
     btn.classList.add('in-watchlist');
     await syncLibraryAfterAdd();
   } catch (e) {
     console.error('[similar] add failed:', e);
-    btn.textContent = '+ Add to watchlist';
+    btn.textContent = 'Failed — tap to retry';
     btn.disabled = false;
+    btn.classList.add('add-error');
   }
 }
 

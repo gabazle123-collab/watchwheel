@@ -1713,3 +1713,13 @@ input:focus { border-color: rgba(157,139,111,0.4); }
   color: var(--ww-amber-text);
   cursor: default;
 }
+
+/* Failed-add state — visible so the user knows to retry (shared by both
+   the similar-to grid buttons and the browse-card buttons) */
+.btn-add-watchlist.add-error,
+.explore-add-btn.add-error {
+  background: rgba(181, 84, 74, 0.10);
+  border-color: #b5544a;
+  color: #d98a80;
+  cursor: pointer;
+}

@@ -920,60 +920,70 @@ app.get('/api/explore/similar', requireAuth, async (req, res) => {
 // (including videos for the trailer key) so the picker + trailers feed
 // have everything they need without a follow-up backfill.
 app.post('/api/user-films/add', requireAuth, async (req, res) => {
-  // Accept either tmdb_id (Explore browse cards) or tmdbId (similar-to flow).
-  const tmdbId = parseInt(req.body?.tmdb_id ?? req.body?.tmdbId, 10);
-  if (!tmdbId) return res.status(400).json({ error: 'tmdb_id required' });
+  try {
+    // Accept either tmdb_id (Explore browse cards) or tmdbId (similar-to flow).
+    const tmdbId = parseInt(req.body?.tmdb_id ?? req.body?.tmdbId, 10);
+    if (!tmdbId) return res.status(400).json({ error: 'tmdb_id required' });
 
-  // App-level dedup on (user_id, tmdb_id). The existing unique index is on
-  // (user_id, letterboxd_url) which won't catch this case — a film added
-  // via Explore (tmdb-style URL) and the same film imported from
-  // Letterboxd (slug-style URL) are different URLs for the same row.
-  const { data: existing } = await supabase
-    .from('user_films')
-    .select('id')
-    .eq('user_id', req.user.id)
-    .eq('tmdb_id', tmdbId)
-    .maybeSingle();
-  if (existing) return res.json({ ok: true, already_in_watchlist: true });
+    // App-level dedup on (user_id, tmdb_id). The existing unique index is on
+    // (user_id, letterboxd_url) which won't catch this case — a film added
+    // via Explore (tmdb-style URL) and the same film imported from
+    // Letterboxd (slug-style URL) are different URLs for the same row.
+    const { data: existing, error: selErr } = await supabase
+      .from('user_films')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .eq('tmdb_id', tmdbId)
+      .maybeSingle();
+    if (selErr) {
+      console.error('[user-films/add] dedup select failed:', selErr.message);
+      return res.status(500).json({ error: selErr.message });
+    }
+    if (existing) return res.json({ ok: true, already_in_watchlist: true });
 
-  const details = await tmdbFetch(`/movie/${tmdbId}`, { append_to_response: 'videos,credits' });
-  if (details.error) {
-    return res.status(details.status || 500).json({ error: details.error });
+    const details = await tmdbFetch(`/movie/${tmdbId}`, { append_to_response: 'videos,credits' });
+    if (details.error) {
+      console.error('[user-films/add] tmdb fetch failed:', details.error);
+      return res.status(details.status || 500).json({ error: details.error });
+    }
+    const d = details.data;
+    if (!d?.title) return res.status(404).json({ error: 'Film not found on TMDB' });
+
+    const trailer =
+      d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
+      d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
+      d.videos?.results?.find(v => v.site === 'YouTube');
+    const director = d.credits?.crew?.find(p => p.job === 'Director')?.name || null;
+    const castList = (d.credits?.cast || []).slice(0, 5).map(p => p.name);
+
+    const row = {
+      user_id:         req.user.id,
+      title:           d.title,
+      year:            d.release_date ? parseInt(d.release_date.slice(0, 4), 10) : null,
+      letterboxd_url:  `https://letterboxd.com/tmdb/${tmdbId}/`,
+      tmdb_id:         tmdbId,
+      poster_url:      d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
+      runtime_minutes: d.runtime || null,
+      synopsis:        d.overview || null,
+      genres:          (d.genres || []).map(g => g.name),
+      director:        director,
+      cast_list:       castList.length ? castList : null,
+      youtube_id:      trailer?.key || null,
+      status:          'ready',
+      added_via:       'explore',
+    };
+
+    const { error } = await supabase.from('user_films').insert(row);
+    if (error) {
+      console.error('[user-films/add] insert failed:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    console.log(`[user-films/add] ${req.user.id} → tmdb:${tmdbId} (${d.title})`);
+    res.json({ ok: true, added: true });
+  } catch (err) {
+    console.error('[user-films/add] failed:', err.message);
+    return res.status(500).json({ error: err.message });
   }
-  const d = details.data;
-  if (!d?.title) return res.status(404).json({ error: 'Film not found on TMDB' });
-
-  const trailer =
-    d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
-    d.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser')  ||
-    d.videos?.results?.find(v => v.site === 'YouTube');
-  const director = d.credits?.crew?.find(p => p.job === 'Director')?.name || null;
-  const castList = (d.credits?.cast || []).slice(0, 5).map(p => p.name);
-
-  const row = {
-    user_id:         req.user.id,
-    title:           d.title,
-    year:            d.release_date ? parseInt(d.release_date.slice(0, 4), 10) : null,
-    letterboxd_url:  `https://letterboxd.com/tmdb/${tmdbId}/`,
-    tmdb_id:         tmdbId,
-    poster_url:      d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
-    runtime_minutes: d.runtime || null,
-    synopsis:        d.overview || null,
-    genres:          (d.genres || []).map(g => g.name),
-    director:        director,
-    cast_list:       castList.length ? castList : null,
-    youtube_id:      trailer?.key || null,
-    status:          'ready',
-    added_via:       'explore',
-  };
-
-  const { error } = await supabase.from('user_films').insert(row);
-  if (error) {
-    console.error('[user-films/add] insert failed:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-  console.log(`[user-films/add] ${req.user.id} → tmdb:${tmdbId} (${d.title})`);
-  res.json({ ok: true, added: true });
 });
 
 // GET /api/unsubscribe?uid=... — no auth required; called from email unsubscribe link
