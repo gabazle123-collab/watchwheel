@@ -1579,7 +1579,11 @@ input:focus { border-color: rgba(157,139,111,0.4); }
 }
 
 /* ── Film detail bottom sheet ───────────────────────────────────────────── */
-.film-sheet { max-height: 85vh; display: flex; flex-direction: column; }
+/* hidden by default — the bare class must NOT set display:flex or it would
+   override the [hidden] attribute and the sheet would show on page load. */
+.film-sheet[hidden] { display: none; }
+.film-sheet { max-height: 85vh; flex-direction: column; }
+.film-sheet:not([hidden]) { display: flex; }
 .film-sheet-scroll {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
